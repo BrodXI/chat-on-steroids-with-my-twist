@@ -1,5 +1,5 @@
 import { JSDOM } from 'jsdom';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi, type Mock } from 'vitest';
 
 vi.mock('../src/renderer/i18n.js', () => ({
   currentLanguage: () => 'en',
@@ -13,13 +13,13 @@ import { initWorkspacePluginRefresh } from '../src/renderer/workspace-plugin-ref
 
 let dom: JSDOM;
 let button: HTMLButtonElement;
-let notify: ReturnType<typeof vi.fn>;
+let notify: Mock<(message: string) => void>;
 
 beforeEach(() => {
   dom = new JSDOM('<button id="workspaceRefreshPlugins" type="button"><i></i><span id="workspaceRefreshPluginsLabel"></span></button>');
   vi.stubGlobal('document', dom.window.document);
   button = dom.window.document.getElementById('workspaceRefreshPlugins') as HTMLButtonElement;
-  notify = vi.fn();
+  notify = vi.fn<(message: string) => void>();
 });
 afterEach(() => {
   vi.unstubAllGlobals();
