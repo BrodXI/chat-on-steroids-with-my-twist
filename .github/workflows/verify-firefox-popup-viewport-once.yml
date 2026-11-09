@@ -51,11 +51,14 @@ jobs:
               };
             });
             await page.goto(url);
-            await page.waitForTimeout(250); // allow initial asynchronous status paint to settle
+            // Opening details queues a separate 'toggle' event which calls paintDetails().
+            // Let that render finish BEFORE injecting diagnostics, else the toggle handler
+            // replaces our long sample strings with the empty mocked status.
+            await page.evaluate(() => { document.querySelector('#more').open = true; });
+            await page.waitForTimeout(350);
             // Fill Advanced with the long real-world values from the reported screenshot.
             // An empty/mock summary cannot detect clipped IDs and protocol strings.
             await page.evaluate(() => {
-              document.querySelector('#more').open = true;
               const grid = document.getElementById('grid');
               grid.textContent = '';
               for (const [key,value] of [
