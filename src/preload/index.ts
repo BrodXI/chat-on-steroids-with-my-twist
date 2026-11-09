@@ -21,6 +21,7 @@ import type { RunningToolActivity, SessionChange, SessionSearchReply, SessionSea
 import type { TurnTrace } from '../shared/turn-trace.js';
 import type { AgentOutputEvent, RunningExecProcess } from '../shared/background-exec.js';
 import type { PluginSnapshot, PluginInstallRequest, PluginConfigPatch } from '../shared/plugins.js';
+import type { WorkspacePluginRefreshStep } from '../shared/workspace-plugin-refresh.js';
 /**
  * The entire renderer-facing API.
  *
