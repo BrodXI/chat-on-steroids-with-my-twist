@@ -58,7 +58,7 @@ import { deletePet, importPet, loadPetAsset, petLibraryState, setPetEnabled, set
 import { assignChatGroup, chatGroupsState, createChatGroup, deleteChatGroup, forgetChatGroupMember, renameChatGroup } from './chat-groups.js';
 import { petOverlayControlState, refreshPetOverlayActivities, refreshPetOverlayAppearance, setPetOverlayVisible } from './pet-overlay.js';
 import { confirmedPluginSchemas, pluginRefreshPublications, pluginRefreshStatuses, onPluginRefreshChange, pluginRefreshUnreadable, resetPluginRefreshLedger } from './plugin-refresh.js';
-import { requestWorkspacePluginRefresh } from './workspace-plugin-refresh.js';
+import { requestWorkspacePluginRefresh, workspacePluginRefreshSteps } from './workspace-plugin-refresh.js';
 /**
  * IPC surface.
  *
@@ -818,6 +818,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     return buildState();
   });
   handle('plugin-refresh:request', () => requestWorkspacePluginRefresh());
+  handle('plugin-refresh:progress', () => workspacePluginRefreshSteps());
   // The renderer asks the person first. Nothing is set aside when the file can be read after all.
   handle('credentials:start-fresh', async () => {
     const setAside = (await setAsideUnreadableSecrets()) !== null;

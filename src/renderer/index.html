@@ -483,9 +483,19 @@
                 <h1>Workspace</h1>
                 <p>Choose what ChatGPT can access and keep your connection healthy.</p>
               </div>
-              <button class="btn workspace-refresh-plugins" id="workspaceRefreshPlugins" type="button" title="Check the Core, Desktop and Plugins tools in ChatGPT">
-                <i class="ico ph ph-arrow-clockwise" aria-hidden="true"></i><span id="workspaceRefreshPluginsLabel">Refresh plugins</span>
-              </button>
+              <div class="workspace-refresh-anchor">
+                <button class="btn workspace-refresh-plugins" id="workspaceRefreshPlugins" type="button" title="Check the Core, Desktop and Plugins tools in ChatGPT" aria-controls="workspaceRefreshProgress" aria-expanded="false">
+                  <i class="ico ph ph-arrow-clockwise" aria-hidden="true"></i><span id="workspaceRefreshPluginsLabel">Refresh plugins</span>
+                </button>
+                <section class="workspace-refresh-progress" id="workspaceRefreshProgress" role="region" aria-labelledby="workspaceRefreshTitle" hidden>
+                  <div class="workspace-refresh-progress-head">
+                    <strong id="workspaceRefreshTitle">Refreshing plugins</strong>
+                    <button class="btn btn-icon" id="workspaceRefreshClose" type="button" aria-label="Close plugin refresh progress" title="Close"><i class="ico ph ph-x" aria-hidden="true"></i></button>
+                  </div>
+                  <p id="workspaceRefreshSummary" role="status">Checking installed plugins…</p>
+                  <ol id="workspaceRefreshSteps" aria-label="Installed plugin refresh steps" aria-live="polite"></ol>
+                </section>
+              </div>
             </header>
             <div class="workspace-layout">
               <div class="workspace-column">

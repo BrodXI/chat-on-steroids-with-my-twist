@@ -21,6 +21,7 @@ import type { RunningToolActivity, SessionChange, SessionSearchReply, SessionSea
 import type { TurnTrace } from '../shared/turn-trace.js';
 import type { AgentOutputEvent, RunningExecProcess } from '../shared/background-exec.js';
 import type { PluginSnapshot, PluginInstallRequest, PluginConfigPatch } from '../shared/plugins.js';
+import type { WorkspacePluginRefreshStep } from '../shared/workspace-plugin-refresh.js';
 /**
  * The entire renderer-facing API.
  *
@@ -279,6 +280,8 @@ const api = {
   resetPluginRefresh: () => call<AppState>('plugin-refresh:reset'),
   /** Ask the browser to check the currently published CoS plugin tool declarations. */
   requestPluginRefresh: () => call<number>('plugin-refresh:request'),
+  /** Only connectors verified as installed in ChatGPT; read-only refresh progress. */
+  workspacePluginRefreshSteps: () => call<WorkspacePluginRefreshStep[]>('plugin-refresh:progress'),
   /** Sets an unreadable credentials file aside (kept as a backup) so keys can be saved again. */
   startFreshCredentials: () => call<{ state: AppState; setAside: boolean }>('credentials:start-fresh'),
   saveSettings: (patch: SettingsPatch, base: SettingsPatch) => call<AppState>('settings:save', { patch, base }),
