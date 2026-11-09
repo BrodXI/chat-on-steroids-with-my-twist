@@ -1,0 +1,86 @@
+name: One-time Firefox popup viewport regression
+on:
+  push:
+    branches: [fix/firefox-popup-viewport-v2151]
+    paths: ['.github/workflows/verify-firefox-popup-viewport-once.yml']
+permissions:
+  contents: read
+jobs:
+  firefox-popup:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Privacy and types
+        run: |
+          npm run verify:privacy
+          npm run typecheck
+      - name: Popup and Firefox extension regressions
+        run: npx vitest run --maxWorkers=2 test/extension-popup.test.ts test/extension-appearance.test.ts test/extension-app-language.test.ts test/firefox-extension-package.test.ts test/extension.test.ts
+      - name: Real Firefox browser install
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps firefox
+      - name: Real Firefox popup layout at 275px, 348px and 600px
+        run: |
+          mkdir -p release/firefox-layout-screenshots
+          node --input-type=module <<'NODE'
+          import { firefox } from 'playwright';
+          import { pathToFileURL } from 'node:url';
+          import path from 'node:path';
+          import assert from 'node:assert/strict';
+          const browser = await firefox.launch({headless: true});
+          const url = pathToFileURL(path.join(process.cwd(),'extension','popup.html')).href;
+          for (const width of [275, 348, 600]) {
+            const page = await browser.newPage({viewport:{width,height:600},deviceScaleFactor:1});
+            await page.addInitScript(() => {
+              window.chrome = {
+                i18n:{getMessage:()=>'',getUILanguage:()=>'en'},
+                runtime:{sendMessage:async()=>null,getURL:(p)=>p},
+                storage:{local:{get:async()=>({}),set:async()=>{}},onChanged:{addListener:()=>{}}}
+              };
+            });
+            await page.goto(url);
+            await page.evaluate(() => document.querySelector('#more').open = true);
+            const dimensions = await page.evaluate(() => {
+              const html=document.documentElement, body=document.body, grid=document.querySelector('#grid');
+              const values=[...grid.querySelectorAll('dd')];
+              return {
+                viewport:innerWidth, htmlClient:html.clientWidth, htmlScroll:html.scrollWidth,
+                bodyClient:body.clientWidth, bodyScroll:body.scrollWidth,
+                shellRight:document.querySelector('.shell').getBoundingClientRect().right,
+                gridRight:grid.getBoundingClientRect().right,
+                gridLayout:getComputedStyle(grid).gridTemplateColumns,
+                wrap:getComputedStyle(values[0]).whiteSpace,
+                actualBodyWidth:getComputedStyle(body).width
+              };
+            });
+            console.log(width+'px '+JSON.stringify(dimensions));
+            assert.ok(dimensions.htmlScroll <= dimensions.htmlClient+1, 'horizontal html overflow at '+width);
+            assert.ok(dimensions.bodyScroll <= dimensions.bodyClient+1, 'horizontal body overflow at '+width);
+            assert.ok(dimensions.gridRight <= dimensions.viewport+1, 'clipped details grid at '+width);
+            assert.ok(dimensions.shellRight <= dimensions.viewport+1, 'clipped popup shell at '+width);
+            assert.equal(dimensions.wrap,'normal');
+            await page.screenshot({path:'release/firefox-layout-screenshots/popup-'+width+'.png',fullPage:true});
+            await page.close();
+          }
+          await browser.close();
+          NODE
+      - name: Repackage and lint Firefox
+        run: |
+          node scripts/build-fork-browser-extensions.mjs
+          npx --yes web-ext@10.7.0 lint --source-dir release/firefox-extension --self-hosted
+      - name: Upload visual checks
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: firefox-popup-responsive-screenshots
+          path: release/firefox-layout-screenshots/
+          if-no-files-found: error
+          retention-days: 7
