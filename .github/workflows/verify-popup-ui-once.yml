@@ -1,4 +1,5 @@
 name: One-time extension popup UI verification
+# Re-run after strict TypeScript tuple fix.
 on:
   push:
     branches: [feature/extension-popup-ui-fix]
