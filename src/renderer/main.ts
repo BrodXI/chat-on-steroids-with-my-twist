@@ -3190,6 +3190,7 @@ const viewMenu = initViewMenu({
 });
 initUsage();
 initPlugins(apply);
+initWorkspacePluginRefresh(api);
 initPets(api, pet);
 openSkillsLibrary = initSkillsLibrary(api);
 initBrowserPreferences();
