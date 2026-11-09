@@ -342,7 +342,7 @@ it('keeps popup status markers truthful: failures have an X, not a green checkma
   for (const [base, bad, pseudo] of [
     ['.badge', '.no .badge', '.badge::after'],
     ['.tick', '.failed .tick', '.tick::after']
-  ]) {
+  ] as const) {
     expect(rule(base), base).toContain('--m: url(');
     expect(rule(bad), bad).toContain('--m: url(');
     expect(rule(bad), bad).toContain('M5 5l6 6M11 5l-6 6');
