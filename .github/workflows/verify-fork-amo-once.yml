@@ -1,0 +1,49 @@
+name: Verify fork Firefox AMO source and extension
+on:
+  push:
+    branches: [feature/firefox-unlisted-signing]
+    paths: ['.github/workflows/verify-fork-amo-once.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Existing Firefox safety regression
+        run: npx vitest run --maxWorkers=2 test/firefox-extension-package.test.ts test/extension.test.ts
+      - name: Rebuild and prepare unlisted fork package
+        run: |
+          npm run verify:privacy
+          node scripts/build-fork-browser-extensions.mjs
+          node --input-type=module <<'NODE'
+          import {readFileSync, writeFileSync} from 'node:fs';
+          const path = 'release/firefox-extension/manifest.json';
+          const manifest = JSON.parse(readFileSync(path,'utf8'));
+          const version = JSON.parse(readFileSync('package.json','utf8')).version;
+          if (manifest.version !== version || manifest.browser_specific_settings?.gecko?.id !== 'companion@brodxi.local' || manifest.browser_specific_settings.gecko.update_url || manifest.permissions.includes('debugger')) throw Error('Unsafe identity or packaging');
+          manifest.version += '.1';
+          writeFileSync(path,JSON.stringify(manifest,null,2)+'\n');
+          console.log('Prepared '+manifest.version+' for unlisted signing');
+          NODE
+          git archive --format=zip --output=release/Chat-On-Steroids-Firefox-Source.zip HEAD extension scripts package.json package-lock.json LICENSE docs/FORK-FIREFOX-SIGNING.md .github/workflows/fork-firefox-sign.yml
+          unzip -tq release/Chat-On-Steroids-Firefox-Source.zip
+      - name: Mozilla self-hosted lint (no submission)
+        run: npx --yes web-ext@10.7.0 lint --source-dir release/firefox-extension --self-hosted
+      - name: Keep unsigned preview and source
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fork-firefox-source-review
+          path: |
+            release/Chat-On-Steroids-Firefox-Unsigned.zip
+            release/Chat-On-Steroids-Firefox-Source.zip
+          if-no-files-found: error
+          retention-days: 7
