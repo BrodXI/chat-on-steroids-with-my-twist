@@ -479,8 +479,13 @@
         <section class="panel" data-panel="home">
           <div class="settings-page-content workspace-content">
             <header class="settings-page-head workspace-page-head">
-              <h1>Workspace</h1>
-              <p>Choose what ChatGPT can access and keep your connection healthy.</p>
+              <div class="workspace-heading">
+                <h1>Workspace</h1>
+                <p>Choose what ChatGPT can access and keep your connection healthy.</p>
+              </div>
+              <button class="btn workspace-refresh-plugins" id="workspaceRefreshPlugins" type="button" title="Check the Core, Desktop and Plugins tools in ChatGPT">
+                <i class="ico ph ph-arrow-clockwise" aria-hidden="true"></i><span id="workspaceRefreshPluginsLabel">Refresh plugins</span>
+              </button>
             </header>
             <div class="workspace-layout">
               <div class="workspace-column">
