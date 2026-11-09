@@ -18,5 +18,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: npm run verify:privacy
+      - run: npm run typecheck
       - name: Changed upstream tests and retained custom refresh tests
         run: npx vitest run --maxWorkers=2 test/process-ready.test.ts test/exec.test.ts test/session-bookmarks.test.ts test/plugin-refresh.test.ts test/plugin-refresh-workflow.test.ts test/workspace-plugin-refresh-ui.test.ts test/workspace-plugin-refresh.test.ts test/workspace-refresh-entry.test.ts test/packaging.test.ts
