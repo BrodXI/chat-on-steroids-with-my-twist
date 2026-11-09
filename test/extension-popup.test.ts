@@ -334,6 +334,21 @@ it('keeps pairing recovery visible by the connection status and hides it once pa
   expect(label.textContent).toContain('App reachable');
 });
 
+it('does not replace a live status text node on an unchanged polling result', () => {
+  const document = openPopup();
+  const win = popup!.window as any;
+  const label = document.getElementById('state')!;
+  const status = { connected: true, paired: true, compatible: true, port: 8765 };
+  win.paintHeader(status);
+  const firstTextNode = label.firstChild;
+  expect(label.textContent).toBe('App reachable · Port 8765');
+  win.paintHeader(status);
+  expect(label.firstChild).toBe(firstTextNode);
+  win.paintHeader({ connected: false });
+  expect(label.textContent).toBe('App not reachable');
+  expect(label.firstChild).not.toBe(firstTextNode);
+});
+
 it('keeps popup status markers truthful: failures have an X, not a green checkmark', () => {
   const rule = (selector: string) => {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
