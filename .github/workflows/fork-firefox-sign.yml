@@ -1,7 +1,6 @@
 name: Sign Firefox add-on (unlisted, fork)
 
-# Manual for routine use. One tightly scoped branch-push trigger is only for
-# the first credential/signing verification; it is removed before merge.
+# Explicitly manual. No Mozilla upload is ever triggered by a push or PR.
 on:
   workflow_dispatch:
     inputs:
@@ -10,9 +9,6 @@ on:
         type: string
         required: true
         default: '1'
-  push:
-    branches: [feature/firefox-unlisted-signing]
-    paths: ['.github/workflows/fork-firefox-sign.yml']
 
 permissions:
   contents: read
