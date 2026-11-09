@@ -1,0 +1,39 @@
+name: One-time extension popup UI verification
+on:
+  push:
+    branches: [feature/extension-popup-ui-fix]
+    paths: ['.github/workflows/verify-popup-ui-once.yml']
+permissions:
+  contents: read
+jobs:
+  verify-ui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Privacy check
+        run: npm run verify:privacy
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Popup, localization, appearance, and Firefox regression tests
+        run: npx vitest run --maxWorkers=2 test/extension-popup.test.ts test/extension-appearance.test.ts test/extension-app-language.test.ts test/extension-i18n.test.ts test/extension-in-page-look.test.ts test/firefox-extension-package.test.ts test/extension.test.ts
+      - name: Verify packaged Chrome and Firefox extensions
+        run: node scripts/build-fork-browser-extensions.mjs
+      - name: Firefox self-hosted lint
+        run: npx --yes web-ext@10.7.0 lint --source-dir release/firefox-extension --self-hosted
+      - name: Upload updated unsigned extension previews
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fork-popup-ui-preview
+          path: |
+            release/Chat-On-Steroids-Extension.zip
+            release/Chat-On-Steroids-Firefox-Unsigned.zip
+          if-no-files-found: error
+          retention-days: 7
