@@ -1344,7 +1344,9 @@ Bookmarked answers (#1719): `sessions:bookmarks { id }` → `SessionBookmark[]` 
 and `sessions:bookmark { id, messageId, excerpt, messageTime, on }` → the chat's new list, in
 `src/main/session/bookmarks.ts`, kept in `bookmarks.json` in the session's folder and written serially per
 session; at most `MAX_BOOKMARKS` (200) per chat, excerpts one line of at most 160 characters. A
-missing or damaged file reads as no bookmarks; damaged entries are dropped. Nothing is sent to
+missing or damaged file reads as no bookmarks; damaged entries are dropped alone. Null, scalars and
+arrays are rejected before property access and counted in one log line, without rewriting on read.
+Valid marks remain usable for listing and toggling, and an explicit edit saves the normalized list. Nothing is sent to
 ChatGPT. The header list jumps through `sessions:locate-message`; a reply no longer in the chat
 shows a notice instead of scrolling. Long row menus scroll inside the window (`row-menu.ts`). A file holding more than the limit keeps the ones bookmarked first. Tests: `test/session-bookmarks.test.ts` (storage, limit, damaged files), the "bookmarked answers" cases in `test/renderer-timeline.part6.test.ts` (answer action, header list, jump), and `scripts/verify-bookmark-list.cjs` (200 bookmarks in a short window, real Electron).
 
@@ -6337,6 +6339,14 @@ the whole run replaying one long workflow; avoid optimizing speculative edge cas
 | Files/patch/output/code-mode | concrete tool owner → kernel serialization | `codex-*`, `exec-*`, `code-mode-*`, `mcp-tool-declarations`, `code-checkpoints` |
 | Plugins/auth/native Desktop | manager/exposure/OAuth or computer frame owner | `plugins-*`, `computer*`, `tools-desktop-*`, `macos-*` |
 | Startup/connection/shipping | lifecycle/config/connection or packaging script | `config`, `window-*`, `shutdown`, `tunnel*`, `control-api`, `packaging`, `update`, `third-party-notices` |
+
+The process-lifetime regression in `test/exec.test.ts` waits for a newline-terminated child-PID
+receipt on stdout (`test/process-ready.ts`), not a polled PID file. Startup errors, premature exits
+and timeout include bounded stdout/stderr, drained through close within the original deadline.
+Failed startup attempts cleanup of the fixture's process tree; the POSIX parent owns a detached
+process group so an unreported child can be reclaimed even after the parent exits.
+Windows retains its PowerShell parent so the assertion still tests parent-only termination rather
+than Node's Windows job-object behavior. Helper tests use fake time, not real startup sleeps.
 
 Discover current suites with `rg --files test`; do not maintain a stale suite count. Vitest runs files in
 parallel but the tests of one file in sequence, so a file that boots the renderer per test is split

@@ -1,6 +1,6 @@
 // @ts-expect-error The target planner is a plain Node script without type declarations.
 import { releaseTargets } from '../scripts/release-targets.mjs';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -192,11 +192,17 @@ describe('cross-platform packaging targets', () => {
     expect(() => releaseTargets('some')).toThrow();
     const canary = yamlFile('.github/workflows/canary.yml');
     expect(canary.jobs.candidate.with).toEqual({ platforms: 'common' });
-    // Built after every app-relevant push to main, and a running canary is never cancelled
-    // halfway through replacing the previous one.
-    expect(canary.on.push).toMatchObject({ branches: ['main'] });
-    expect(canary.on.push['paths-ignore']).toEqual(expect.arrayContaining(['docs/**', 'test/**']));
-    expect(canary.on).toHaveProperty('workflow_dispatch');
+    // Upstream builds a canary after app changes. This fork intentionally keeps upstream's
+    // inherited release workflows manual-only; never re-enable push builds merely to pass a
+    // test. Fork-local workflows are the unambiguous signal, not the CI environment.
+    if (existsSync(path.join(root, '.github/workflows/fork-cloud.yml'))) {
+      expect(canary.on.push).toBeUndefined();
+      expect(canary.on).toHaveProperty('workflow_dispatch');
+    } else {
+      expect(canary.on.push).toMatchObject({ branches: ['main'] });
+      expect(canary.on.push['paths-ignore']).toEqual(expect.arrayContaining(['docs/**', 'test/**']));
+      expect(canary.on).toHaveProperty('workflow_dispatch');
+    }
     expect(canary.concurrency).toEqual({ group: 'canary', 'cancel-in-progress': false });
     // A stable release passes nothing, which is `all`.
     expect(yamlFile('.github/workflows/publish.yml').jobs.candidate?.with?.platforms).toBeUndefined();
