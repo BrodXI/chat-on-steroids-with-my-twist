@@ -817,6 +817,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     await resetPluginRefreshLedger();
     return buildState();
   });
+  handle('plugin-refresh:request', () => requestWorkspacePluginRefresh());
   // The renderer asks the person first. Nothing is set aside when the file can be read after all.
   handle('credentials:start-fresh', async () => {
     const setAside = (await setAsideUnreadableSecrets()) !== null;
