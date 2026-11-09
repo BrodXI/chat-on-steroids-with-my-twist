@@ -5,6 +5,8 @@ export interface PluginRefreshStatus {
   state: 'unknown' | 'current' | 'pending' | 'refreshing' | 'manual' | 'failed';
   /** Successful provider tool call under this live publication; not a full-schema claim. */
   responding?: boolean;
+  /** An explicit manual check is still awaiting its provider-side observation. */
+  observing?: boolean;
   /** Failed phase only; private provider diagnostics stay in the refresh owner. */
   failure?: 'inspection' | 'confirmation' | 'migration';
 }
