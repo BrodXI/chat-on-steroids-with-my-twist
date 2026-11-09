@@ -1,5 +1,5 @@
 name: One-time extension popup UI verification
-# Re-run after strict TypeScript tuple fix.
+# Final regression after live-region accessibility update.
 on:
   push:
     branches: [feature/extension-popup-ui-fix]
