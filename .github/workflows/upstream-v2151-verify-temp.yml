@@ -1,0 +1,35 @@
+name: One-time upstream v2.1.51 integration verification
+on:
+  push:
+    branches:
+      - sync/v2.1.51-integration
+    paths:
+      - '.github/workflows/upstream-v2151-verify-temp.yml'
+permissions:
+  contents: read
+concurrency:
+  group: upstream-v2151-once
+  cancel-in-progress: true
+jobs:
+  integration-tests:
+    name: Privacy, typecheck and complete fork regression tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install exact dependency lock
+        run: npm ci
+      - name: Privacy verification
+        run: npm run verify:privacy
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit and integration tests (bounded workers)
+        run: npx vitest run --maxWorkers=2 --exclude test/mcp-shutdown.test.ts --exclude test/computer.test.ts
+      - name: Exclusive unit tests
+        run: npx vitest run --maxWorkers=1 test/computer.test.ts test/mcp-shutdown.test.ts
