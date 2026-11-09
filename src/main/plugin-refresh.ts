@@ -301,6 +301,7 @@ export function pluginRefreshStatuses(): Promise<Partial<Record<PluginSurface, P
         : row.appId && row.completedSchemaId === publication.schemaId ? (!row.tunnelKey?.startsWith('unbound:') || row.verifiedRun === runId ? 'current' : 'unknown')
         : row.attempted && row.appId ? 'refreshing' : 'pending';
       return [publication.surface, { schemaId: publication.schemaId, state,
+        ...(row?.observe && requestedHere(row) ? { observing: true } : {}),
         ...(state === 'failed' ? { failure: legacyFailure ? 'migration' : row?.failure ?? (row?.attempted && row.appId ? 'confirmation' : 'inspection') } : {}),
         ...(responding.get(publication.surface) === publication && publicationScopes.get(publication.surface) === scope(publication.surface) ? { responding: true } : {}) }];
     }));
