@@ -1,9 +1,8 @@
 name: CI
 
+# Fork policy: the full cross-platform suite runs only when explicitly requested.
+# Use Fork Cloud Development for routine checks and Windows builds.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
