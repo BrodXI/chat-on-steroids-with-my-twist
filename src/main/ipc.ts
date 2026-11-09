@@ -58,7 +58,7 @@ import { deletePet, importPet, loadPetAsset, petLibraryState, setPetEnabled, set
 import { assignChatGroup, chatGroupsState, createChatGroup, deleteChatGroup, forgetChatGroupMember, renameChatGroup } from './chat-groups.js';
 import { petOverlayControlState, refreshPetOverlayActivities, refreshPetOverlayAppearance, setPetOverlayVisible } from './pet-overlay.js';
 import { confirmedPluginSchemas, pluginRefreshPublications, pluginRefreshStatuses, onPluginRefreshChange, pluginRefreshUnreadable, resetPluginRefreshLedger } from './plugin-refresh.js';
-import { requestWorkspacePluginRefresh } from './workspace-plugin-refresh.js';
+import { requestWorkspacePluginRefresh, workspacePluginRefreshSteps } from './workspace-plugin-refresh.js';
 /**
  * IPC surface.
  *
