@@ -1,0 +1,72 @@
+name: Fork Cloud Development
+
+# Intentionally manual: no CI matrix or installer build on every push.
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Choose targeted checks or a Windows x64 installer"
+        type: choice
+        options:
+          - checks
+          - windows-installer
+        default: checks
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-cloud-${{ github.ref }}-${{ inputs.task }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    if: inputs.task == 'checks'
+    name: Typecheck and unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify privacy and types
+        run: |
+          npm run verify:privacy
+          npm run typecheck
+      - name: Unit tests (bounded workers)
+        run: npx vitest run --maxWorkers=2 --exclude test/mcp-shutdown.test.ts --exclude test/computer.test.ts
+      - name: Exclusive unit tests
+        run: npx vitest run --maxWorkers=1 test/computer.test.ts test/mcp-shutdown.test.ts
+
+  windows-installer:
+    if: inputs.task == 'windows-installer'
+    name: Build Windows x64 and smoke-test packaged runtime
+    runs-on: windows-2025
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Package and smoke-test
+        run: npm run dist:x64
+      - name: Save unsigned Windows installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fork-windows-x64-${{ github.run_number }}
+          path: release/Chat-On-Steroids-Setup-x64.exe
+          if-no-files-found: error
+          retention-days: 3
