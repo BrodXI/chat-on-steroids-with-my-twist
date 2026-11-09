@@ -24,6 +24,7 @@ import { initAppShortcuts } from './app-shortcuts.js';
 import { initViewMenu } from './view-menu.js';
 import { initShortcutsDialog, shortcutGroups } from './shortcuts-dialog.js';
 import { initPlugins, applyPluginsState } from './plugins.js';
+import { initWorkspacePluginRefresh } from './workspace-plugin-refresh.js';
 import { initBrowserPreferences } from './browser-preferences.js';
 import { initSetupGuide } from './setup-guide.js';
 import { initAppearance } from './appearance.js';
