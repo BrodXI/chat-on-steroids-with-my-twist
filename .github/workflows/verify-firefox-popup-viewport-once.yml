@@ -41,6 +41,9 @@ jobs:
           for (const width of [275, 348, 600]) {
             const page = await browser.newPage({viewport:{width,height:600},deviceScaleFactor:1});
             await page.addInitScript(() => {
+              // Keep the app's 1.5-second polling from replacing the injected diagnostic
+              // values with empty fake status before the layout assertion or screenshot.
+              window.setInterval = () => 0;
               window.chrome = {
                 i18n:{getMessage:()=>'',getUILanguage:()=>'en'},
                 runtime:{sendMessage:async()=>null,getURL:(p)=>p},
@@ -48,6 +51,7 @@ jobs:
               };
             });
             await page.goto(url);
+            await page.waitForTimeout(250); // allow initial asynchronous status paint to settle
             // Fill Advanced with the long real-world values from the reported screenshot.
             // An empty/mock summary cannot detect clipped IDs and protocol strings.
             await page.evaluate(() => {
@@ -87,6 +91,8 @@ jobs:
                 gridLayout:getComputedStyle(grid).gridTemplateColumns,
                 wrap:getComputedStyle(values[0]).whiteSpace,
                 actualBodyWidth:getComputedStyle(body).width,
+                extensionValue: values[1]?.textContent,
+                sessionValue: values[3]?.textContent,
                 longestValueOverflow: Math.max(...values.map(v=>v.scrollWidth-v.clientWidth)),
                 biggestValueRight: Math.max(...values.map(v=>v.getBoundingClientRect().right))
               };
@@ -97,6 +103,8 @@ jobs:
             assert.ok(dimensions.gridRight <= dimensions.viewport+1, 'clipped details grid at '+width);
             assert.ok(dimensions.shellRight <= dimensions.viewport+1, 'clipped popup shell at '+width);
             assert.equal(dimensions.wrap,'normal');
+            assert.equal(dimensions.extensionValue, 'v2.1.51.3 · protocol 14', 'sample details were replaced before inspection');
+            assert.equal(dimensions.sessionValue, 'd781c48b-fae0-455c-a37f-6d4a5edc07ab', 'sample session was replaced before inspection');
             assert.ok(dimensions.longestValueOverflow <= 1, 'clipped diagnostic value at '+width);
             assert.ok(dimensions.biggestValueRight <= dimensions.viewport+1,'out-of-view diagnostic at '+width);
             await page.screenshot({path:'release/firefox-layout-screenshots/popup-'+width+'.png',fullPage:true});
