@@ -119,6 +119,13 @@
 #updateReadinessDetails > p { margin: 0; }
 #updateReadinessSummary { margin: 0; color: var(--soft); }
 #updateReadinessSummary.is-ok { color: var(--green); }
+/* Fork action beside the Workspace heading, with its own wrap on narrow windows. */
+.workspace-page-head { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; }
+.workspace-heading { flex: 1 1 280px; min-width: 0; }
+.workspace-refresh-plugins { display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: 0 0 auto; min-height: 36px; margin-top: 2px; padding: 7px 12px; border: 1px solid var(--edge); background: var(--card); color: var(--ink); font-size: calc(12px * var(--text-scale, 1)); }
+.workspace-refresh-plugins .ico { --ico: 16px; --glyph: 16px; }
+.workspace-refresh-plugins:hover:not(:disabled) { background: var(--hover); }
+.workspace-refresh-plugins:disabled { opacity: .6; cursor: wait; }
 .workspace-layout { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: 28px; }
 .workspace-column { display: contents; }
 .workspace-section { grid-column: 1; min-width: 0; }
