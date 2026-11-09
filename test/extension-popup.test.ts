@@ -368,3 +368,22 @@ it('keeps popup status markers truthful: failures have an X, not a green checkma
   expect(styles).toMatch(/summary:focus-visible/);
   expect(styles).toMatch(/prefers-reduced-motion: reduce/);
 });
+
+it('sizes the Firefox popup from body, not html, and wraps Advanced values', () => {
+  // Firefox chooses a standards-mode action popup's preferred width from <body>.
+  // Screenshot regression: html width:348px + body width:100% yielded a ~275px
+  // panel showing only the leftmost portion of the 348px grid.
+  const rule = (selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return styles.match(new RegExp('(?:^|\\n)' + escaped + '\\s*\\{([^}]*)\\}'))?.[1] ?? '';
+  };
+  expect(rule('html')).not.toMatch(/(?:^|;)\s*width\s*:/);
+  expect(rule('body')).toMatch(/\bwidth:\s*348px\s*;/);
+  expect(rule('body')).toMatch(/\bmax-width:\s*100%\s*;/);
+  expect(rule('.shell')).toMatch(/\bmin-width:\s*0\s*;/);
+  expect(rule('.grid')).toContain('minmax(0,');
+  expect(rule('.grid dd')).toContain('white-space: normal');
+  expect(rule('.grid dd')).toContain('overflow-wrap: anywhere');
+  expect(rule('.grid dd')).not.toContain('text-overflow: ellipsis');
+  expect(styles).toMatch(/@media \(max-width:\s*315px\)/);
+});

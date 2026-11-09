@@ -60,19 +60,17 @@
  */
 html {
   background: var(--bg);
-  /*
-   * The popup is as wide as the document, and until now the document grew by the width of a
-   * scrollbar the moment the Advanced drawer made the content taller than the window. Chrome
-   * anchors a popup by its right edge, so that widening read as the whole panel jumping
-   * sideways. Reserving the gutter permanently keeps one width whether the bar is there or
-   * not; 348 = the 340 the layout is drawn for, plus the 8 the bar occupies.
-   */
-  width: 348px;
+  /* Do not size the root. Firefox measures a standards-mode extension popup's BODY
+     preferred width; a fixed 348px root and 100%-wide body were clipped to ~275px. */
   scrollbar-gutter: stable;
 }
 
 body {
-  width: 100%;
+  /* Firefox calculates its popup width from this element, not from html.
+     When embedded in a narrow overflow panel, shrink to the available viewport. */
+  width: 348px;
+  max-width: 100%;
+  min-width: 0;
   margin: 0;
   padding: 0;
   background: var(--bg);
@@ -118,6 +116,8 @@ body {
 }
 
 .shell {
+  width: 100%;
+  min-width: 0;
   padding: 14px 12px 12px;
   border-radius: 14px;
   background: var(--bg);
@@ -629,22 +629,28 @@ input:focus-visible + .track {
 
 .grid {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 6px 12px;
+  /* Neither column may impose its min-content width on the popup viewport. */
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
+  gap: 7px 10px;
+  min-width: 0;
   margin: 0 0 12px;
   padding: 0 8px;
   font-size: 11.5px;
 }
 
 .grid dt {
+  min-width: 0;
   color: var(--faint);
+  overflow-wrap: anywhere;
 }
 
 .grid dd {
+  min-width: 0;
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Long version/protocol/ID details must remain readable instead of extending
+     beyond Firefox's constrained popup and creating a horizontal scrollbar. */
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 11px;
@@ -785,6 +791,16 @@ summary:focus-visible {
 @media (prefers-reduced-motion: reduce) { .transfer, .transfer-done, .done-logo, .done-check { animation: none; } }
 /* Korean separates words with spaces: wrap there, not inside a word. */
 html:lang(ko) body { word-break: keep-all; overflow-wrap: break-word; }
+
+/* Toolbar overflow panels can be narrower than a normal Firefox action popup.
+   Compress padding and details without hiding any diagnostic values. */
+@media (max-width: 315px) {
+  .shell { padding: 12px 9px 10px; }
+  .card { padding-inline: 10px; }
+  .row { gap: 8px; }
+  .meta { max-width: 106px; }
+  .grid { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr); gap: 6px 7px; padding-inline: 2px; }
+}
 
 /* Reduce motion without disabling the connection or capture indicators themselves. */
 @media (prefers-reduced-motion: reduce) {
