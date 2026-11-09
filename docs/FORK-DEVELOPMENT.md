@@ -7,7 +7,7 @@ This fork currently uses the official **TypeScript / Electron** implementation. 
 - `main` is the stable integration branch. Work on feature branches and review changes through pull requests.
 - The inherited full `CI` suite and `Canary` release are **manual only** in this fork; they are not required for every push.
 - The inherited `PR checklist` jobs are gated to the upstream repository. This fork uses optional checks instead.
-- The `Fork Cloud Development` workflow runs **only when manually triggered**, either on Linux for typechecks/unit tests or on native Windows for an x64 installer.
+- The `Fork Cloud Development` workflow runs **only when manually triggered**, on Linux for typechecks/unit tests or browser extension archives, or on native Windows for an x64 installer. Windows installer runs also create browser extension archives in parallel.
 - Upstream's other workflows are retained for merge compatibility; many already use an upstream-repository guard. Do **not** run the official publish workflow for this fork without separately adapting branding, download URLs, signing, secrets and release metadata.
 - The build produces an **unsigned** Windows installer. Test it before trusting or distributing it.
 
@@ -16,9 +16,20 @@ This fork currently uses the official **TypeScript / Electron** implementation. 
 1. On GitHub, open the fork and choose **Code → Codespaces → Create codespace on main** (or a feature branch). Its Linux container installs Node 22 and runs `npm ci`.
 2. Edit on a feature branch. Run `npm run typecheck` and focused `npx vitest run <test-file>` locally in the Codespace as appropriate.
 3. Before committing, run `npm run verify:privacy`; do not commit credentials or personal paths. Run `npm run verify` before important merges when practical.
-4. For cloud validation or a native Windows installer, open **Actions → Fork Cloud Development → Run workflow**. Choose `checks` or `windows-installer`, then select the branch.
-5. Download a successful installer from the workflow run's **Artifacts**. It expires after three days. The Windows job packages and smoke-tests the runtime, but this does **not** replace interactive desktop testing on Windows.
+4. For cloud validation or a native Windows installer, open **Actions → Fork Cloud Development → Run workflow**. Choose `checks`, `browser-extensions` or `windows-installer`, then select the branch.
+5. Download artifacts from the successful workflow run. Windows installer artifacts expire after three days; browser extension artifacts after seven days. The Windows job packages and smoke-tests the runtime, but this does **not** replace interactive desktop testing on Windows.
 6. Close or stop Codespaces when not in use. Codespaces has a monthly free allowance, not unlimited free compute or storage; check GitHub billing settings.
+
+### Install the browser companion
+
+Choose `browser-extensions` from **Actions → Fork Cloud Development → Run workflow**. Choosing `windows-installer` also builds both browser companions in parallel. Download `fork-browser-extensions-<run number>` from **Artifacts** and extract the artifact ZIP.
+
+- **Chrome, Edge and Chromium:** Extract `Chat-On-Steroids-Extension.zip` to a permanent folder. Visit `chrome://extensions` (Edge: `edge://extensions`), enable **Developer mode**, choose **Load unpacked**, and select the extracted directory containing `manifest.json`. Do not select the ZIP itself. The browser may warn that it is an unpacked extension.
+- **Firefox (development only):** Extract `Chat-On-Steroids-Firefox-Unsigned.zip`. In Firefox 140+, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select the extracted `manifest.json`. Firefox normally removes temporary add-ons when it restarts. **Do not treat this unsigned archive as a permanently installable XPI.** For regular persistent Firefox installation, you must register your own Mozilla add-on identity, sign it through AMO and configure fork-specific update URLs.
+- Both archives are version-matched to `package.json` and contain a shared build stamp. Keep the desktop app and extension versions compatible. Installation still requires the normal CoS pairing/setup.
+- The temporary Firefox build deliberately uses a distinct `companion@brodxi.local` ID and omits the **upstream** Firefox update URL, so it cannot silently install official upstream builds over your fork.
+
+For local or Codespaces packaging, run `npm ci && node scripts/build-fork-browser-extensions.mjs`. The two verified ZIP files appear in `release/`.
 
 ### Upstream updates
 
