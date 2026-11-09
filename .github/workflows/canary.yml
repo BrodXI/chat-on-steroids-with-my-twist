@@ -9,16 +9,9 @@ name: Canary
 # problems that reproduce on the latest stable release. The in-app update check reads
 # releases/latest, which never returns a prerelease, so no stable install is offered a canary,
 # and a canary install is offered the next stable release as usual.
+# Fork policy: prevent heavy automatic canary releases on every main push.
+# The official canary remains available by manual dispatch.
 on:
-  push:
-    branches: [main]
-    # Changes that cannot change the packaged app do not need a new build.
-    paths-ignore:
-      - '**/*.md'
-      - 'docs/**'
-      - 'test/**'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/pull_request_template.md'
   workflow_dispatch:
 
 permissions:
