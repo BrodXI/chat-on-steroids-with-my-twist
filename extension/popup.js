@@ -330,7 +330,7 @@ function paintHeader(status) {
   const ready = connected && paired && status.compatible === true;
 
   $('pill').className = `pill ${ready ? '' : incompatible ? 'bad' : 'off'}`;
-  $('state').textContent = incompatible
+  const stateText = incompatible
     ? t('popup_state_version_mismatch', 'Version mismatch')
     : off
       ? t('popup_state_disconnected', 'Disconnected')
@@ -340,6 +340,9 @@ function paintHeader(status) {
           // Health + pairing prove reachability, not the recorder/command flow.
           ? t('popup_state_app_reachable_port', 'App reachable · Port $1', status.port)
           : t('popup_state_port_connecting', 'Port $1 · connecting', status.port);
+  // The status pill is a live region. Only change its text when something really
+  // changed, otherwise polling every 1.5 seconds makes screen readers repeat it.
+  if ($('state').textContent !== stateText) $('state').textContent = stateText;
 
   // The one state with nothing to click at the top: say what to do instead of a grey pill alone.
   $('appHint').hidden = !(status && !connected && !off);

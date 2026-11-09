@@ -145,10 +145,11 @@ header {
 
 h1 {
   margin: 0;
-  font-size: 15.5px;
-  font-weight: 400;
-  letter-spacing: -0.008em;
-  color: var(--muted);
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.018em;
+  color: var(--text);
 }
 
 h1 b {
@@ -156,17 +157,63 @@ h1 b {
   color: var(--text);
 }
 
+/* Keep live status and the recovery action together instead of hiding recovery in Advanced. */
+.connection-panel {
+  margin: 0 0 17px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+}
+
+.connection-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 9px;
+  min-width: 0;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin: 0 0 16px 4px;
-  padding: 6px 13px 6px 11px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 7px 12px 7px 10px;
   border-radius: 999px;
   background: var(--green-soft);
   color: var(--green);
   font-size: 12.5px;
-  font-weight: 500;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+
+.connection-retry {
+  flex: none;
+  min-height: 33px;
+  padding: 6px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: 600 12px/1.25 var(--sans);
+  cursor: pointer;
+  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+.connection-retry[hidden] { display: none; }
+.connection-retry:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+.connection-retry:active:not(:disabled) { transform: scale(0.97); }
+.connection-retry:disabled { cursor: progress; opacity: 0.6; }
+.connection-panel .hint {
+  margin: 9px 3px 0;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .pill.off {
@@ -212,6 +259,7 @@ h1 b {
   align-items: center;
   gap: 11px;
   min-height: 44px;
+  padding-block: 7px;
   list-style: none;
 }
 
@@ -235,14 +283,15 @@ details + .row,
 .name {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* Two-line labels remain readable in translated UIs and at high font scaling. */
+  overflow-wrap: anywhere;
   font-size: 13.5px;
+  line-height: 1.35;
 }
 
 .meta {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   max-width: 132px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -275,6 +324,8 @@ button.meta:disabled {
 
 /* The badge at the end of a capture row: green tick, hollow ring, or red cross. */
 .badge {
+  /* Declared on the parent so .no .badge can override the default check with an X. */
+  --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M3.8 8.2l2.9 2.9 5.5-5.6'/%3E%3C/svg%3E");
   position: relative;
   width: 19px;
   height: 19px;
@@ -292,7 +343,7 @@ button.meta:disabled {
   background: var(--check);
   -webkit-mask: center / 12px 12px no-repeat var(--m);
   mask: center / 12px 12px no-repeat var(--m);
-  --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M3.8 8.2l2.9 2.9 5.5-5.6'/%3E%3C/svg%3E");
+
   transition: opacity 150ms ease;
 }
 
@@ -387,6 +438,8 @@ details[open] > summary .chevron {
 }
 
 .tick {
+  /* Declared on the parent so .failed .tick can override the check with an X. */
+  --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round' d='M3.8 8.2l2.9 2.9 5.5-5.6'/%3E%3C/svg%3E");
   position: relative;
   width: 14px;
   height: 14px;
@@ -403,7 +456,7 @@ details[open] > summary .chevron {
   background: var(--check);
   -webkit-mask: center / 10px 10px no-repeat var(--m);
   mask: center / 10px 10px no-repeat var(--m);
-  --m: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23000' stroke-width='2.8' stroke-linecap='round' stroke-linejoin='round' d='M3.8 8.2l2.9 2.9 5.5-5.6'/%3E%3C/svg%3E");
+
 }
 
 .done .tick {
@@ -629,9 +682,11 @@ input:focus-visible + .track {
   cursor: default;
 }
 
-button:focus-visible {
-  outline: 2px solid var(--muted);
-  outline-offset: 2px;
+button:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 8px;
 }
 
 .hint {
@@ -730,3 +785,9 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) { .transfer, .transfer-done, .done-logo, .done-check { animation: none; } }
 /* Korean separates words with spaces: wrap there, not inside a word. */
 html:lang(ko) body { word-break: keep-all; overflow-wrap: break-word; }
+
+/* Reduce motion without disabling the connection or capture indicators themselves. */
+@media (prefers-reduced-motion: reduce) {
+  .connection-retry, .badge, .chevron, .thumb, .track, .actions button { transition: none; }
+  .wait .badge, .running .tick { animation: none; }
+}

@@ -27,10 +27,13 @@
         <h1 data-i18n="extension_action_title">Chat On Steroids</h1>
       </header>
 
-      <p class="pill off" id="pill"><span class="dot"></span><span id="state" data-i18n="popup_state_looking_for_app">Looking for the app</span></p>
-
-
-      <p class="hint" id="appHint" hidden data-i18n="popup_app_not_running_help">Make sure Chat On Steroids is open on this computer. The extension connects on its own.</p>
+      <section class="connection-panel" aria-labelledby="state">
+        <div class="connection-row">
+          <p class="pill off" id="pill" role="status"><span class="dot" aria-hidden="true"></span><span id="state" data-i18n="popup_state_looking_for_app">Looking for the app</span></p>
+          <button class="connection-retry" id="retryBtn" type="button" hidden data-i18n="popup_try_again">Try again</button>
+        </div>
+        <p class="hint" id="appHint" hidden data-i18n="popup_app_not_running_help">Make sure Chat On Steroids is open on this computer. The extension connects on its own.</p>
+      </section>
       <p class="alert" id="alert" hidden></p>
       <section class="transfer" id="signInTransfer" hidden>
         <button class="transfer-button" id="signInTransferBtn" type="button">
@@ -119,7 +122,6 @@
       <dl class="grid" id="grid"></dl>
       <div class="actions">
         <button id="copyBtn" type="button" data-i18n="popup_copy">Copy</button>
-        <button id="retryBtn" type="button" hidden data-i18n="popup_try_again">Try again</button>
       </div>
     </details>
 
