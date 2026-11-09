@@ -15,7 +15,7 @@ jobs:
   checklist:
     name: PR checklist
     # Dependabot's grouped updates have no issue or fail-first test; the OS test matrix covers them.
-    if: github.actor != 'dependabot[bot]'
+    if: github.repository == 'totec448-spec/chat-on-steroids' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -32,7 +32,7 @@ jobs:
 
   fail-first-platform:
     name: Select fail-first runner
-    if: github.actor != 'dependabot[bot]'
+    if: github.repository == 'totec448-spec/chat-on-steroids' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -50,7 +50,7 @@ jobs:
 
   fail-first:
     name: Fail-first test
-    if: github.actor != 'dependabot[bot]'
+    if: github.repository == 'totec448-spec/chat-on-steroids' && github.actor != 'dependabot[bot]'
     needs: fail-first-platform
     # Keep the computed preference inside three fixed hosted-runner choices.
     runs-on: ${{ needs.fail-first-platform.outputs.runner == 'windows-2025' && 'windows-2025' || needs.fail-first-platform.outputs.runner == 'macos-15' && 'macos-15' || 'ubuntu-24.04' }}
