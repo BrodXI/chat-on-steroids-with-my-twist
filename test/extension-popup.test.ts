@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 
 const html = await readFile(new URL('../extension/popup.html', import.meta.url), 'utf8');
+const styles = await readFile(new URL('../extension/popup.css', import.meta.url), 'utf8');
 const i18nScript = await readFile(new URL('../extension/i18n.js', import.meta.url), 'utf8');
 const script = await readFile(new URL('../extension/popup.js', import.meta.url), 'utf8');
 const manifest = JSON.parse(await readFile(new URL('../extension/manifest.json', import.meta.url), 'utf8'));
@@ -304,4 +305,51 @@ it('rounds the page up to a whole pixel, so Chrome does not size the popup a fra
   // Already whole: no extra pixel.
   height = 540; resized!();
   expect(root.style.minHeight).toBe('540px');
+});
+
+// Fork popup UI: recovery belongs next to the status, not in an Advanced drawer that
+// a disconnected user would have to discover before they could retry.
+it('keeps pairing recovery visible by the connection status and hides it once paired', () => {
+  const document = openPopup();
+  const connection = document.querySelector('.connection-panel')!;
+  const retry = document.getElementById('retryBtn') as HTMLButtonElement;
+  const label = document.getElementById('state')!;
+  expect(connection.contains(retry)).toBe(true);
+  expect(document.querySelector('#more #retryBtn')).toBeNull();
+  expect(connection.getAttribute('aria-labelledby')).toBe('state');
+  expect(document.getElementById('pill')!.getAttribute('role')).toBe('status');
+  expect(retry.hidden).toBe(true);
+
+  (popup!.window as any).paintHeader({ connected: false });
+  expect(label.textContent).toBe('App not reachable');
+  expect(retry.hidden).toBe(false);
+  expect(document.getElementById('appHint')!.hidden).toBe(false);
+
+  (popup!.window as any).paintHeader({ connected: true, paired: false, disconnected: true, compatible: true, port: 8765 });
+  expect(retry.hidden).toBe(false);
+  expect(retry.textContent).toBe('Connect');
+
+  (popup!.window as any).paintHeader({ connected: true, paired: true, compatible: true, port: 8765 });
+  expect(retry.hidden).toBe(true);
+  expect(label.textContent).toContain('App reachable');
+});
+
+it('keeps popup status markers truthful: failures have an X, not a green checkmark', () => {
+  const rule = (selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return styles.match(new RegExp(escaped + '\\s*\\{([^}]*)\\}'))?.[1] ?? '';
+  };
+  for (const [base, bad, pseudo] of [
+    ['.badge', '.no .badge', '.badge::after'],
+    ['.tick', '.failed .tick', '.tick::after']
+  ]) {
+    expect(rule(base), base).toContain('--m: url(');
+    expect(rule(bad), bad).toContain('--m: url(');
+    expect(rule(bad), bad).toContain('M5 5l6 6M11 5l-6 6');
+    // A mask assigned directly to ::after would override the inherited failure mark.
+    expect(rule(pseudo), pseudo).not.toContain('--m:');
+  }
+  expect(styles).toContain('.connection-retry[hidden] { display: none; }');
+  expect(styles).toMatch(/summary:focus-visible/);
+  expect(styles).toMatch(/prefers-reduced-motion: reduce/);
 });
