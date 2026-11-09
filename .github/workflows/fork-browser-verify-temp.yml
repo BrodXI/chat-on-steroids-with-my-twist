@@ -1,0 +1,39 @@
+name: Verify fork browser packages once
+on:
+  push:
+    branches: [feature/browser-extension-artifacts]
+    paths:
+      - '.github/workflows/fork-browser-verify-temp.yml'
+      - 'scripts/build-fork-browser-extensions.mjs'
+      - '.github/workflows/fork-cloud.yml'
+      - 'docs/FORK-DEVELOPMENT.md'
+permissions:
+  contents: read
+jobs:
+  browser-packages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Source regression tests
+        run: npx vitest run --maxWorkers=2 test/firefox-extension-package.test.ts test/extension.test.ts
+      - name: Build both archives
+        run: node scripts/build-fork-browser-extensions.mjs
+      - name: Firefox manifest validator
+        run: npx --yes web-ext@10.7.0 lint --source-dir release/firefox-extension --self-hosted
+      - name: Upload built archives
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fork-browser-extensions-preview-${{ github.run_number }}
+          path: |
+            release/Chat-On-Steroids-Extension.zip
+            release/Chat-On-Steroids-Firefox-Unsigned.zip
+          if-no-files-found: error
+          retention-days: 7
