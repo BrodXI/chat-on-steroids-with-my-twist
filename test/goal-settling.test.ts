@@ -13,7 +13,7 @@ const end = script.indexOf('\n  /**\n   * Asks again about a turn', start);
 if (start < 0 || end < 0) throw new Error('Goal watcher source boundary changed');
 const watcherSource = script.slice(start, end);
 
-function harness(toolDurationMs: number, abandonAtMs = Infinity) {
+function harness(toolDurationMs: number, abandonAtMs = Infinity, compactAtMs = Infinity, navigateAtMs = Infinity) {
   let clock = 0;
   let busy = false;
   let draftCalls = 0;
@@ -25,7 +25,8 @@ function harness(toolDurationMs: number, abandonAtMs = Infinity) {
     get alive() { return alive; },
     conversationId: 'chat-A',
     epoch: 1,
-    goalTurnId: 'turn-A',
+    goalTurnId: 'turn-A' as string | null,
+    goalTicketId: 'ticket-A' as string | null,
     generating: false,
     nativeBusy: false,
     job: null,
@@ -42,6 +43,8 @@ function harness(toolDurationMs: number, abandonAtMs = Infinity) {
     sleep: async () => {
       clock += 1000;
       if (clock >= abandonAtMs) alive = false;
+      if (clock >= compactAtMs) context.nativeBusy = true;
+      if (clock >= navigateAtMs) { context.epoch = 2; context.conversationId = 'chat-B'; context.goalTurnId = 'turn-B'; busy = true; }
       if (clock > 12 * 60_000) throw new Error('Goal watcher never finished');
     },
     requestGoalDraft: async () => { draftCalls++; },
@@ -52,7 +55,7 @@ function harness(toolDurationMs: number, abandonAtMs = Infinity) {
     (ended: unknown, turnId: string) => Promise<void>;
   return {
     run: () => watcher({}, 'turn-A'),
-    snapshot: () => ({ clock, busy, draftCalls, phase })
+    snapshot: () => ({ clock, busy, draftCalls, phase, turn: context.goalTurnId, ticket: context.goalTicketId })
   };
 }
 
@@ -70,5 +73,16 @@ describe('Goal/Loop page settling', () => {
     await test.run();
     expect(test.snapshot().draftCalls).toBe(0);
     expect(test.snapshot().busy).toBe(false);
+  });
+  it('releases a local pickup when compaction temporarily owns the composer', async () => {
+    const test = harness(Infinity, Infinity, 2000);
+    await test.run();
+    expect(test.snapshot()).toMatchObject({ busy: false, draftCalls: 0, turn: null, ticket: null, phase: '' });
+  });
+
+  it('does not unlock automation belonging to a newer navigation epoch', async () => {
+    const test = harness(Infinity, Infinity, Infinity, 2000);
+    await test.run();
+    expect(test.snapshot()).toMatchObject({ busy: true, draftCalls: 0, turn: 'turn-B' });
   });
 });
