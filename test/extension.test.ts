@@ -4590,6 +4590,54 @@ describe('extension observation journal', () => {
     expect(worker.alarmClear).not.toHaveBeenCalledWith('clf-bridge-drain');
   });
 
+  it('retains a durable input send receipt when HTTP 200 rejects its application-level ACK', async () => {
+    // /input/ack can return HTTP 200 with { ok: false } if the server cannot yet
+    // bind the exact receipt. The worker must not erase evidence of a real ChatGPT
+    // send; recovery may replay its receipt, never the message itself.
+    const receipt = {
+      kind: 'input',
+      id: '33333333-4444-4555-8666-777777777777',
+      owner: '23:document-23-0:0',
+      conversationId: '11111111-2222-4333-8444-555555555555',
+      messageId: 'chatgpt-sent-message',
+      queuedAt: Date.now()
+    };
+    const local = new FakeStorageArea({ port: 8765, token: 'paired-token', commandAckOutbox: [receipt] });
+    const session = new FakeStorageArea({ commandAckOutbox: [receipt] });
+    const delivered: Array<Record<string, unknown>> = [];
+    let accepted = false;
+    const fetch = vi.fn(async (input: string, init: Record<string, unknown> = {}) => {
+      const url = new URL(input);
+      if (url.pathname === '/hello') return response(200, { app: 'chat-on-steroids', paired: true });
+      if (url.pathname === '/input/ack') {
+        delivered.push(JSON.parse(String(init.body)));
+        return response(200, { ok: accepted });
+      }
+      return response(404, {});
+    });
+
+    const first = loadWorker({ local, session, fetch });
+    await first.send({ type: 'status' });
+    await vi.waitFor(() => expect(delivered.length).toBeGreaterThan(0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(session.data.commandAckOutbox).toEqual([receipt]);
+    expect(local.data.commandAckOutbox).toEqual([receipt]);
+
+    accepted = true;
+    const restarted = loadWorker({ local, session, fetch });
+    await restarted.send({ type: 'status' });
+    await vi.waitFor(() => expect(session.data.commandAckOutbox).toEqual([]));
+    expect(local.data.commandAckOutbox).toEqual([]);
+    expect(delivered.length).toBeGreaterThan(1);
+    for (const body of delivered) {
+      expect(body).toEqual({
+        id: receipt.id, owner: receipt.owner,
+        conversationId: receipt.conversationId, messageId: receipt.messageId
+      });
+    }
+  });
+
   it('durably retries a lost command ACK after the service worker restarts', async () => {
     const local = new FakeStorageArea({ port: 8765, token: 'paired-token' });
     const session = new FakeStorageArea();
