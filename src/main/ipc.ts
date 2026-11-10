@@ -264,6 +264,7 @@ const settingsPatch = z.object({
     desktopUnattributed: z.boolean().optional(),
     linuxDesktopEnabled: z.boolean().optional(),
     developerMode: z.boolean().optional(),
+    launchAsAdministrator: z.boolean().optional(),
     playfulStatus: z.boolean().optional(),
     playfulContinue: z.boolean().optional(),
     announceTurns: z.boolean().optional(),
@@ -500,6 +501,8 @@ function mergeSettings(current: Config, base: SettingsSnapshot, wanted: Settings
       linuxDesktopEnabled: (base.ui.linuxDesktopEnabled === true) === (wanted.ui.linuxDesktopEnabled === true)
         ? current.ui.linuxDesktopEnabled : wanted.ui.linuxDesktopEnabled,
       developerMode: pick(current.ui.developerMode, base.ui.developerMode, wanted.ui.developerMode),
+      launchAsAdministrator: (base.ui.launchAsAdministrator === true) === (wanted.ui.launchAsAdministrator === true)
+        ? current.ui.launchAsAdministrator : wanted.ui.launchAsAdministrator === true,
       playfulStatus: pick(current.ui.playfulStatus, base.ui.playfulStatus, wanted.ui.playfulStatus),
       playfulContinue: pick(current.ui.playfulContinue, base.ui.playfulContinue, wanted.ui.playfulContinue),
       announceTurns: pick(current.ui.announceTurns, base.ui.announceTurns, wanted.ui.announceTurns),
