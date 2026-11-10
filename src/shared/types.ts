@@ -174,6 +174,8 @@ export interface UiPrefs {
   finishHoldOnStop?: boolean;
   finishLeadMinutes?: number;
   developerMode?: boolean;
+  /** Opt-in: request Windows UAC elevation for the entire app on the next launch. */
+  launchAsAdministrator?: boolean;
   /** Rotating joke words instead of "Working" in a chat's status line. Off by default. */
   playfulStatus?: boolean;
   /** Screen readers hear "Reply finished" when a turn completes in the open chat. Off by default. */
