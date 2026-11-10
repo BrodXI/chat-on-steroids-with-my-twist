@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import * as browserWake from '../src/main/browser-wake.js';
 import {
   emptyEvidence,
   inFlightToolCalls,
@@ -86,6 +87,32 @@ describe('what a chat’s calls are doing', () => {
 });
 
 describe('local calls still running', () => {
+  it('wakes queued browser delivery when a tool finishes without making the still-running call sendable', async () => {
+    const wake = vi.spyOn(browserWake, 'wakeBrowserWork').mockImplementation(() => undefined);
+    const first = callFrom('conversation-a');
+    const second = callFrom('conversation-a');
+    let finishFirst!: () => void;
+    let finishSecond!: () => void;
+    const heldFirst = trackInFlight(first, () => new Promise<void>(resolve => { finishFirst = resolve; }));
+    const heldSecond = trackInFlight(second, () => new Promise<void>(resolve => { finishSecond = resolve; }));
+    try {
+      expect(runningToolCalls('conversation-a')).toBe(2);
+      expect(wake).not.toHaveBeenCalled();
+      finishFirst();
+      await heldFirst;
+      expect(runningToolCalls('conversation-a')).toBe(1);
+      expect(wake).not.toHaveBeenCalled();
+      finishSecond();
+      await heldSecond;
+      expect(runningToolCalls('conversation-a')).toBe(0);
+      expect(wake).toHaveBeenCalledTimes(1);
+    } finally {
+      finishFirst();
+      finishSecond();
+      await Promise.all([heldFirst, heldSecond]);
+      wake.mockRestore();
+    }
+  });
   it('does not let one chat’s work hold another chat busy', async () => {
     // The compaction barrier waits for this to reach zero before it submits a settled brief.
     // A swarm runs every chat through this one process, so a global count meant a worker's
