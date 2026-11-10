@@ -11,6 +11,7 @@ import path from 'node:path';
 import { app, Notification, BrowserWindow, ipcMain, Menu, Tray, nativeImage, nativeTheme, net, powerMonitor, powerSaveBlocker, screen, session } from 'electron';
 import { createKeepAwake, installKeepAwake } from './keep-awake.js';
 import { getConfig, initConfigPath, loadConfig } from './config.js';
+import { isWindowsElevated, requestWindowsAdminLaunch, waitForUnelevatedParent } from './windows-admin-launch.js';
 import { initConnectorProofPath, loadConnectorProof, notePluginInstalled } from './connector-proof.js';
 import { initWorkerArchivePath, loadWorkerArchive, queueWorkerArchives, WORKER_ARCHIVE_AFTER_FINISH_MS } from './worker-archive.js';
 import { initBrowserProofPath, loadBrowserProof } from './browser-proof.js';
@@ -160,6 +161,8 @@ let shutdownComplete = false;
 const usageWarmup = new AbortController();
 
 // One instance only: two copies would fight over the tunnel and the config file.
+// A UAC-approved child waits for the old instance to release the lock.
+waitForUnelevatedParent(process.argv);
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   // `app.quit()` does not make the rest of this module stop executing. Mark this process as a
@@ -495,6 +498,15 @@ void app.whenReady().then(async () => {
   if (windowActivation.isDisabled()) return;
   await loadConfig();
   markStartup('config');
+  // The checkbox takes effect only at a new start. UAC denial leaves the ordinary
+  // app running, while acceptance releases the single-instance lock for the new app.
+  // Never request elevation for development builds or when already elevated.
+  if (app.isPackaged && process.platform === 'win32' && getConfig().ui.launchAsAdministrator === true &&
+      !isWindowsElevated() && requestWindowsAdminLaunch(process.execPath, process.pid)) {
+    logInfo('Windows UAC approved elevated app launch; closing unelevated instance');
+    app.quit();
+    return;
+  }
   setRecordingStorageLimit(getConfig().sessions.storageLimitGiB ?? DEFAULT_RECORDING_STORAGE_GIB);
   await loadConnectorProof();
   await loadWorkerArchive();
