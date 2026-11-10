@@ -7449,6 +7449,7 @@
     // Outside the guard, and last: startCompact runs for tens of seconds and polls this
     // same endpoint while it works, so firing it with `pulling` still set would deadlock
     // the run against the poll that started it.
+    if (current() && CLF_DOM.conversationId() === forId) await recoverRecordedHandoff(forId, forEpoch);
     if (current() && CLF_DOM.conversationId() === forId) await maybeResumePendingCompaction(forId, forEpoch);
     if (current() && CLF_DOM.conversationId() === forId) maybeRecoverResumeGoalTurn();
     if (current() && CLF_DOM.conversationId() === forId) maybeRecoverDurableGoalTurn();
@@ -10052,6 +10053,38 @@
    * the click, and a document that died there may or may not have sent. That state ends at
    * ChatGPT's own marker or at an explicit cancel, never at a second Send.
    */
+  // The app already owns the accepted source message ID. Its recorder can have
+  // the exact completed handoff even when the native reader cannot reconstruct
+  // the marker/terminal after a reload. Reconcile that durable anchor directly,
+  // without retyping the request or treating arbitrary visible text as a brief.
+  let recordedHandoffProbe = null;
+  async function recoverRecordedHandoff(forId, forEpoch) {
+    const ticket = job;
+    const source = ticket?.stage === 'handoff-pending' && ticket.sourceSend?.state === 'sent'
+      ? ticket.sourceSend.messageId : null;
+    if (!source || typeof ticket.token !== 'string') return false;
+    const current = () => alive && epoch === forEpoch && conversationId === forId &&
+      CLF_DOM.conversationId() === forId && job?.stage === 'handoff-pending' &&
+      job.token === ticket.token && job.sourceSend?.messageId === source;
+    if (!current()) return false;
+    const key = JSON.stringify([forId, forEpoch, ticket.token, source]);
+    if (recordedHandoffProbe?.key === key &&
+        (recordedHandoffProbe.running || Date.now() - recordedHandoffProbe.at < 10_000)) return false;
+    const probe = { key, at: Date.now(), running: true };
+    recordedHandoffProbe = probe;
+    try {
+      const reply = await ask({ type: 'compact', conversationId: forId, token: ticket.token,
+        sourceMessageId: source });
+      if (!current() || reply?.ok !== true || reply.data?.stored !== true) return false;
+      if (reply.data.job) job = reply.data.job;
+      nativePhase = '';
+      localError = '';
+      renderControl();
+      return true;
+    } catch { return false; }
+    finally { probe.running = false; }
+  }
+
   async function maybeResumePendingCompaction(forId = conversationId, forEpoch = epoch) {
     if (job && job.stage === 'handoff-pending' && job.sourceSend?.state === 'dispatched-unresolved' &&
         !(await releaseUndeliveredHandoff(forId, forEpoch))) return;
@@ -10739,7 +10772,9 @@
    * the recorder could create a shadow session for that same conversation.
    */
   async function reconcileContinuationMarker(key, marked) {
-    if (!conversationId || CLF_DOM.conversationId() !== conversationId) return false;
+    const owner = conversationId, ownerEpoch = epoch;
+    const current = () => alive && epoch === ownerEpoch && conversationId === owner && CLF_DOM.conversationId() === owner;
+    if (!owner || !current()) return false;
     if (marked.kind === 'RESUME') {
       continuationJournalPending = true;
       const reply = await ask({
@@ -10776,6 +10811,7 @@
           (chars, message) => chars + String(message.rawText || '').length, 0
         ) + (descriptor.calls || []).filter(call => call?.answered === true).length, 0))
     });
+    if (!current()) return false;
     if (!bound || bound.ok !== true) return continuationRefused(bound) ? 'settled' : false;
     // The app captured the brief from its recorder's exact response to this anchor, which
     // outranks whatever answer shape is mounted now (#787).
@@ -10802,11 +10838,11 @@
     const summary = String(terminal?.rawText || '').trim();
     if (!summary) return false;
     const pending = await peekPendingTools();
-    if (pending !== 0 || !conversationId || CLF_DOM.conversationId() !== conversationId) return false;
+    if (pending !== 0 || !current()) return false;
     nativePhase = 'delivering';
     renderControl();
-    const delivered = await ask({ type: 'compact', conversationId, token: marked.token, summary });
-    if (!delivered || delivered.ok !== true) return false;
+    const delivered = await ask({ type: 'compact', conversationId: owner, token: marked.token, summary });
+    if (!current() || !delivered || delivered.ok !== true) return false;
     if (delivered.data && delivered.data.job) job = delivered.data.job;
     nativePhase = '';
     localError = '';
@@ -11162,7 +11198,14 @@
         if (!current()) return;
         // Somebody — the user, or a turn ChatGPT started on its own — is talking again.
         if (generating) return void setGoalPhase('');
-        if (nativeBusy || (job && job.busy)) return void setGoalPhase('');
+        if (nativeBusy || (job && job.busy)) {
+          // Compaction temporarily owns the composer. Return the pickup to the
+          // durable Goal cursor, rather than stranding this turn's local claim.
+          goalTurnId = null;
+          goalTicketId = null;
+          setGoalPhase('');
+          return;
+        }
         if (!goalUsable()) return void setGoalPhase('');
         const nextText = briefSoFar(ended, text);
         const nextActivity = briefActivityMark(ended);
@@ -11189,9 +11232,13 @@
       }
 
     } finally {
-      goalBusy = false;
-      renderControl();
-      injectStage();
+      // A stale watcher must not unlock a new chat/turn's automation.
+      if (alive && conversationId === forId && epoch === forEpoch &&
+          (goalTurnId === forTurn || goalTurnId === null)) {
+        goalBusy = false;
+        renderControl();
+        injectStage();
+      }
     }
   }
 
