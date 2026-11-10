@@ -11192,7 +11192,8 @@
       // navigation or a new generation. Never infer idle from elapsed wall time.
       let text = finalAnswerText(ended);
       let activity = briefActivityMark(ended);
-      let stableSince = Date.now();
+      // Start the quiet window only after the first verified idle observation.
+      let stableSince = null;
       while (current()) {
         await sleep(GOAL_POLL_MS);
         if (!current()) return;
@@ -11215,9 +11216,10 @@
         if (busy || nextText !== text || nextActivity !== activity) {
           text = nextText;
           activity = nextActivity;
-          stableSince = Date.now();
+          stableSince = null;
           continue;
         }
+        if (stableSince === null) stableSince = Date.now();
         if (Date.now() - stableSince < GOAL_STABLE_MS) continue;
         // Tool-only completion belongs to the existing app recovery window. The
         // confirmed reload/listening receipt will supply a synthetic source ticket;
