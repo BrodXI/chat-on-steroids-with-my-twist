@@ -3907,5 +3907,7 @@
   "Compact & Resume holds up": "压缩并继续更稳定",
   "A page reload in a Project no longer makes it fail every time.": "在项目中重新加载页面不再每次都失败。",
   "Skills only when wanted": "技能仅在需要时使用",
-  "A Skill is not chosen when you say not to use it.": "你说不要使用时，不会选中该技能。"
+  "A Skill is not chosen when you say not to use it.": "你说不要使用时，不会选中该技能。",
+  "Launch CoS as administrator": "以管理员身份启动 CoS",
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "仅限 Windows。下次启动时，Windows 用户帐户控制会请求批准。随后所有 CoS 工具和后台进程都将拥有提升的权限。非必要请保持关闭。"
 }

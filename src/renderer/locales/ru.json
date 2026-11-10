@@ -4159,5 +4159,7 @@
   "Compact & Resume holds up": "Сжать и продолжить стало надёжнее",
   "A page reload in a Project no longer makes it fail every time.": "Перезагрузка страницы в проекте больше не приводит к сбою каждый раз.",
   "Skills only when wanted": "Навыки только по желанию",
-  "A Skill is not chosen when you say not to use it.": "Навык не выбирается, если вы просите его не использовать."
+  "A Skill is not chosen when you say not to use it.": "Навык не выбирается, если вы просите его не использовать.",
+  "Launch CoS as administrator": "Запускать CoS от имени администратора",
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Только Windows. При следующем запуске контроль учётных записей Windows запросит разрешение. Все инструменты и фоновые процессы CoS получат повышенные права. Оставьте выключенным, если это не требуется."
 }

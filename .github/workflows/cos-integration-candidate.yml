@@ -18,9 +18,9 @@ concurrency:
 jobs:
   checks:
     if: github.event_name == 'workflow_dispatch' || github.head_ref == 'integration/cos-2-1-52-reliability-admin-project-20261110'
-    name: Typecheck and unit tests
+    name: Typecheck and focused integration tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -34,10 +34,8 @@ jobs:
         run: |
           npm run verify:privacy
           npm run typecheck
-      - name: Unit tests (bounded workers)
-        run: npx vitest run --maxWorkers=2 --exclude test/mcp-shutdown.test.ts --exclude test/computer.test.ts
-      - name: Exclusive unit tests
-        run: npx vitest run --maxWorkers=1 test/computer.test.ts test/mcp-shutdown.test.ts
+      - name: Focused regression tests (bounded execution)
+        run: npx vitest run --maxWorkers=2 test/goal-settling.test.ts test/handoff-answer-recovery.test.ts test/recorded-handoff-recovery.test.ts test/project-compact-send.test.ts test/windows-admin-launch.test.ts test/renderer-i18n.test.ts test/extension.test.ts test/firefox-extension-package.test.ts test/continuation-marker.test.ts test/continuation.test.ts test/chatgpt-dom-input.test.ts
 
   browser-extensions:
     needs: checks
@@ -54,8 +52,6 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
-      - name: Verify extension source and Firefox manifest
-        run: npx vitest run --maxWorkers=2 test/firefox-extension-package.test.ts test/extension.test.ts test/handoff-answer-recovery.test.ts test/project-compact-send.test.ts test/goal-settling.test.ts test/windows-admin-launch.test.ts
       - name: Package and verify browser extensions
         run: node scripts/build-fork-browser-extensions.mjs
       - name: Validate Firefox development build

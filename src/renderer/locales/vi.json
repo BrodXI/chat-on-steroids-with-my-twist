@@ -3907,5 +3907,7 @@
   "Compact & Resume holds up": "Nén & Tiếp tục ổn định hơn",
   "A page reload in a Project no longer makes it fail every time.": "Tải lại trang trong một dự án không còn khiến nó thất bại mỗi lần.",
   "Skills only when wanted": "Skill chỉ khi cần",
-  "A Skill is not chosen when you say not to use it.": "Skill không được chọn khi bạn nói không dùng nó."
+  "A Skill is not chosen when you say not to use it.": "Skill không được chọn khi bạn nói không dùng nó.",
+  "Launch CoS as administrator": "Khởi chạy CoS với quyền quản trị viên",
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Chỉ dành cho Windows. Khi khởi động lần tiếp theo, UAC của Windows sẽ yêu cầu phê duyệt. Sau đó mọi công cụ và tiến trình nền của CoS sẽ có quyền truy cập nâng cao. Hãy tắt nếu không cần thiết."
 }

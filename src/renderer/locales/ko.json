@@ -3907,5 +3907,7 @@
   "Compact & Resume holds up": "압축 후 계속이 안정적",
   "A page reload in a Project no longer makes it fail every time.": "프로젝트에서 페이지를 새로 고쳐도 매번 실패하지 않습니다.",
   "Skills only when wanted": "원할 때만 Skill",
-  "A Skill is not chosen when you say not to use it.": "사용하지 말라고 하면 Skill이 선택되지 않습니다."
+  "A Skill is not chosen when you say not to use it.": "사용하지 말라고 하면 Skill이 선택되지 않습니다.",
+  "Launch CoS as administrator": "CoS를 관리자 권한으로 실행",
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Windows 전용. 다음 시작 시 Windows 사용자 계정 컨트롤이 승인을 요청합니다. 이후 모든 CoS 도구와 백그라운드 프로세스가 상승된 권한을 갖습니다. 필요한 경우에만 켜세요."
 }

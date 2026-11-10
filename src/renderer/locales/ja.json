@@ -3907,5 +3907,7 @@
   "Compact & Resume holds up": "圧縮して再開が安定",
   "A page reload in a Project no longer makes it fail every time.": "プロジェクトでページを再読み込みしても、毎回失敗することはなくなりました。",
   "Skills only when wanted": "必要なときだけSkill",
-  "A Skill is not chosen when you say not to use it.": "使わないでと伝えたSkillは選ばれません。"
+  "A Skill is not chosen when you say not to use it.": "使わないでと伝えたSkillは選ばれません。",
+  "Launch CoS as administrator": "CoS を管理者として起動",
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Windows のみ。次回起動時に Windows のユーザー アカウント制御が承認を求めます。その後、すべての CoS ツールとバックグラウンド プロセスが昇格した権限を持ちます。必要な場合以外はオフにしてください。"
 }

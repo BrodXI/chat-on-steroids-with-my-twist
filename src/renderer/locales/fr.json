@@ -4075,5 +4075,7 @@
   "Compact & Resume holds up": "Compacter et reprendre tient bon",
   "A page reload in a Project no longer makes it fail every time.": "Recharger la page dans un projet ne le fait plus échouer à chaque fois.",
   "Skills only when wanted": "Des Skills seulement si voulu",
-  "A Skill is not chosen when you say not to use it.": "Une Skill n'est pas choisie quand vous dites de ne pas l'utiliser."
+  "A Skill is not chosen when you say not to use it.": "Une Skill n'est pas choisie quand vous dites de ne pas l'utiliser.",
+  "Launch CoS as administrator": "Lancer CoS en tant qu’administrateur",
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Windows uniquement. Au prochain démarrage, le contrôle de compte utilisateur de Windows demandera une autorisation. Tous les outils et processus en arrière-plan de CoS disposeront alors de privilèges élevés. Laisse cette option désactivée sauf nécessité."
 }
