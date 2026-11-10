@@ -59,8 +59,15 @@ jobs:
       - run: npm ci
       - name: Build Electron app
         run: npm run build
-      - name: Verify upstream Scheduled/UI layout
-        run: npm run verify:ui
+      - name: Verify Scheduled and fork plugin UI in isolated Electron with X11
+        env:
+          COS_VERIFY_UI_LINUX_X11: '1'
+          COS_VERIFY_UI_TIMEOUT_MS: '120000'
+        run: |
+          set -euo pipefail
+          command -v xvfb-run >/dev/null || { sudo apt-get update && sudo apt-get install -y xvfb; }
+          xvfb-run -a npm run verify:ui -- scheduled
+          xvfb-run -a npm run verify:ui -- plugin-refresh
       - name: Package Chrome and Firefox companions
         run: node scripts/build-fork-browser-extensions.mjs
       - name: Mozilla extension lint
