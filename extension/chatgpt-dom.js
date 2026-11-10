@@ -45,7 +45,7 @@ var CLF_DOM = (() => {
   const STOP =
     'button[data-testid="stop-button"], button[data-testid="composer-stop-button"], ' +
     'button[aria-label="Stop streaming"], button[aria-label="Stop generating"], button[aria-label="Stop answering"]';
-  const SEND = 'button[data-testid="send-button"], form button[aria-label^="Send" i], form[data-chatgpt-composer] button[type="submit"]';
+  const SEND = 'button[data-testid="send-button"], form button[aria-label^="Send" i], form button[type="submit"]';
   /** The composer's own trailing controls, where the send and dictation buttons live. */
   const TRAILING =
     '[data-testid="composer-trailing-actions"], [data-testid="composer-footer-actions"], ' +
@@ -1147,6 +1147,9 @@ var CLF_DOM = (() => {
 
   function sendControls() {
     const labelled = nativeComposerControls(SEND);
+    // Project chats can mount the native composer form without data-chatgpt-composer.
+    // Its unique native submit control is still Send, even when the form has no
+    // test id or English label. Do not synthesize Enter or click an ambiguous control.
     return labelled.length > 0 ? labelled : localeFreeSendControls();
   }
 
