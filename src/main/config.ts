@@ -381,6 +381,8 @@ const configSchema = z.object({
       return false;
     }),
     developerMode: z.boolean().optional(),
+    // Damaged or missing settings never request elevation.
+    launchAsAdministrator: z.boolean().optional().default(false).catch(false),
     playfulStatus: z.boolean().optional(),
     playfulContinue: z.boolean().optional(),
     announceTurns: z.boolean().optional(),
