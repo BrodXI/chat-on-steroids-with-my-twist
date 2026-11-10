@@ -937,6 +937,7 @@ function save(over: { readOnly?: boolean; theme?: ThemeChoice; appearance?: Appe
       keepScreenAwake: $<HTMLSelectElement>('keepAwake').value === 'screen',
       minimizeToTray: $<HTMLInputElement>('minimizeToTray').checked,
       developerMode: $<HTMLInputElement>('developerMode').checked,
+      launchAsAdministrator: $<HTMLInputElement>('launchAsAdministrator').checked,
       playfulStatus: $<HTMLInputElement>('playfulStatus').checked,
       playfulContinue: $<HTMLInputElement>('playfulContinue').checked,
       announceTurns: $<HTMLInputElement>('announceTurns').checked,
@@ -1946,6 +1947,9 @@ function apply(next: AppState): void {
   applyValue($<HTMLSelectElement>('keepAwake'), awakeChoice(config.ui), previousState ? awakeChoice(previousState.config.ui) : undefined);
   applyChecked($<HTMLInputElement>('autoConnect'), config.ui.autoConnect, previousState?.config.ui.autoConnect);
   applyChecked($<HTMLInputElement>('developerMode'), config.ui.developerMode === true, previousState?.config.ui.developerMode);
+  $('launchAsAdministratorRow').hidden = next.platform?.family !== 'windows';
+  applyChecked($<HTMLInputElement>('launchAsAdministrator'), config.ui.launchAsAdministrator === true,
+    previousState?.config.ui.launchAsAdministrator);
   applyChecked($<HTMLInputElement>('playfulStatus'), config.ui.playfulStatus === true, previousState?.config.ui.playfulStatus);
   applyChecked($<HTMLInputElement>('playfulContinue'), config.ui.playfulContinue === true, previousState?.config.ui.playfulContinue);
   applyChecked($<HTMLInputElement>('announceTurns'), config.ui.announceTurns === true, previousState?.config.ui.announceTurns);
