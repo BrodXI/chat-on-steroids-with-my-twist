@@ -10871,8 +10871,6 @@
   const GOAL_STABLE_MS = 8_000;
   /** How often the settling turn is re-read. */
   const GOAL_POLL_MS = 1_000;
-  /** The ceiling on watching one turn settle before giving up on it quietly. */
-  const GOAL_WATCH_MS = 5 * 60_000;
   /** How long a ready draft waits for a composer it cannot write into. */
   const GOAL_TYPING_WINDOW_MS = 2 * 60_000;
   /**
@@ -11111,11 +11109,15 @@
     const forEpoch = epoch;
     const current = () => alive && conversationId === forId && epoch === forEpoch && goalTurnId === forTurn;
     try {
-      const deadline = Date.now() + GOAL_WATCH_MS;
+      // A long-running local tool can legitimately outlast the old five-minute watch.
+      // Retiring the watcher at that deadline left goalTurnId claimed and the panel
+      // permanently on "Answer settling", with no later edge to restart this turn.
+      // Keep the exact turn claim alive until a verified idle window, cancellation,
+      // navigation or a new generation. Never infer idle from elapsed wall time.
       let text = finalAnswerText(ended);
       let activity = briefActivityMark(ended);
       let stableSince = Date.now();
-      while (Date.now() < deadline) {
+      while (current()) {
         await sleep(GOAL_POLL_MS);
         if (!current()) return;
         // Somebody — the user, or a turn ChatGPT started on its own — is talking again.
@@ -11145,10 +11147,7 @@
         await requestGoalDraft(forTurn, current);
         return;
       }
-      setGoalPhase(
-        'settling',
-        t('content_goal_answer_never_settled', 'the answer never stopped changing, so nothing was written')
-      );
+
     } finally {
       goalBusy = false;
       renderControl();
