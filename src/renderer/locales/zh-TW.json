@@ -3909,5 +3909,11 @@
   "Skills only when wanted": "技能僅在需要時使用",
   "A Skill is not chosen when you say not to use it.": "你說不要使用時，不會選中該技能。",
   "Launch CoS as administrator": "以系統管理員身分啟動 CoS",
-  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "僅限 Windows。下次啟動時，Windows 使用者帳戶控制會要求核准。之後所有 CoS 工具和背景程序都會取得提高的權限。非必要請保持關閉。"
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "僅限 Windows。下次啟動時，Windows 使用者帳戶控制會要求核准。之後所有 CoS 工具和背景程序都會取得提高的權限。非必要請保持關閉。",
+  "Refresh plugins": "重新整理外掛程式",
+  "Refreshing plugins": "正在重新整理外掛程式",
+  "Checking installed plugins…": "正在檢查已安裝的外掛程式…",
+  "Check the Core, Desktop and Plugins tools in ChatGPT": "檢查 ChatGPT 中的 Core、Desktop 和 Plugins 工具",
+  "Close plugin refresh progress": "關閉外掛程式重新整理進度",
+  "Installed plugin refresh steps": "已安裝外掛程式的重新整理步驟"
 }

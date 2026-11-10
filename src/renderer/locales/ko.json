@@ -3909,5 +3909,11 @@
   "Skills only when wanted": "원할 때만 Skill",
   "A Skill is not chosen when you say not to use it.": "사용하지 말라고 하면 Skill이 선택되지 않습니다.",
   "Launch CoS as administrator": "CoS를 관리자 권한으로 실행",
-  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Windows 전용. 다음 시작 시 Windows 사용자 계정 컨트롤이 승인을 요청합니다. 이후 모든 CoS 도구와 백그라운드 프로세스가 상승된 권한을 갖습니다. 필요한 경우에만 켜세요."
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Windows 전용. 다음 시작 시 Windows 사용자 계정 컨트롤이 승인을 요청합니다. 이후 모든 CoS 도구와 백그라운드 프로세스가 상승된 권한을 갖습니다. 필요한 경우에만 켜세요.",
+  "Refresh plugins": "플러그인 새로 고침",
+  "Refreshing plugins": "플러그인 새로 고치는 중",
+  "Checking installed plugins…": "설치된 플러그인 확인 중…",
+  "Check the Core, Desktop and Plugins tools in ChatGPT": "ChatGPT에서 Core, Desktop 및 Plugins 도구 확인",
+  "Close plugin refresh progress": "플러그인 새로 고침 진행 상황 닫기",
+  "Installed plugin refresh steps": "설치된 플러그인 새로 고침 단계"
 }

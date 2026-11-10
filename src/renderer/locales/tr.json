@@ -3993,5 +3993,11 @@
   "Skills only when wanted": "Beceriler yalnızca istenince",
   "A Skill is not chosen when you say not to use it.": "Kullanma dediğinde bir Beceri seçilmez.",
   "Launch CoS as administrator": "CoS'u yönetici olarak başlat",
-  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Yalnızca Windows. Bir sonraki başlatmada Windows Kullanıcı Hesabı Denetimi onay ister. Ardından tüm CoS araçları ve arka plan işlemleri yükseltilmiş erişime sahip olur. Gerekmedikçe kapalı bırak."
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Yalnızca Windows. Bir sonraki başlatmada Windows Kullanıcı Hesabı Denetimi onay ister. Ardından tüm CoS araçları ve arka plan işlemleri yükseltilmiş erişime sahip olur. Gerekmedikçe kapalı bırak.",
+  "Refresh plugins": "Eklentileri yenile",
+  "Refreshing plugins": "Eklentiler yenileniyor",
+  "Checking installed plugins…": "Yüklü eklentiler denetleniyor…",
+  "Check the Core, Desktop and Plugins tools in ChatGPT": "ChatGPT'deki Core, Desktop ve Plugins araçlarını kontrol et",
+  "Close plugin refresh progress": "Eklenti yenileme ilerlemesini kapat",
+  "Installed plugin refresh steps": "Yüklü eklenti yenileme adımları"
 }

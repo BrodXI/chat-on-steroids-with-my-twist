@@ -4161,5 +4161,11 @@
   "Skills only when wanted": "Навыки только по желанию",
   "A Skill is not chosen when you say not to use it.": "Навык не выбирается, если вы просите его не использовать.",
   "Launch CoS as administrator": "Запускать CoS от имени администратора",
-  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Только Windows. При следующем запуске контроль учётных записей Windows запросит разрешение. Все инструменты и фоновые процессы CoS получат повышенные права. Оставьте выключенным, если это не требуется."
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Только Windows. При следующем запуске контроль учётных записей Windows запросит разрешение. Все инструменты и фоновые процессы CoS получат повышенные права. Оставьте выключенным, если это не требуется.",
+  "Refresh plugins": "Обновить плагины",
+  "Refreshing plugins": "Обновление плагинов",
+  "Checking installed plugins…": "Проверка установленных плагинов…",
+  "Check the Core, Desktop and Plugins tools in ChatGPT": "Проверить инструменты Core, Desktop и Plugins в ChatGPT",
+  "Close plugin refresh progress": "Закрыть ход обновления плагинов",
+  "Installed plugin refresh steps": "Этапы обновления установленных плагинов"
 }

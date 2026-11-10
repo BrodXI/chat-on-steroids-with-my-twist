@@ -4077,5 +4077,11 @@
   "Skills only when wanted": "Skills só quando desejado",
   "A Skill is not chosen when you say not to use it.": "Uma Skill não é escolhida quando diz para não a usar.",
   "Launch CoS as administrator": "Iniciar o CoS como administrador",
-  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Apenas Windows. No próximo arranque, o Controlo de Conta de Utilizador do Windows pedirá aprovação. Todas as ferramentas e processos em segundo plano do CoS terão permissões elevadas. Mantém a opção desativada salvo necessidade."
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Apenas Windows. No próximo arranque, o Controlo de Conta de Utilizador do Windows pedirá aprovação. Todas as ferramentas e processos em segundo plano do CoS terão permissões elevadas. Mantém a opção desativada salvo necessidade.",
+  "Refresh plugins": "Atualizar plugins",
+  "Refreshing plugins": "A atualizar plugins",
+  "Checking installed plugins…": "A verificar os plugins instalados…",
+  "Check the Core, Desktop and Plugins tools in ChatGPT": "Verificar as ferramentas Core, Desktop e Plugins no ChatGPT",
+  "Close plugin refresh progress": "Fechar o progresso da atualização de plugins",
+  "Installed plugin refresh steps": "Passos de atualização dos plugins instalados"
 }

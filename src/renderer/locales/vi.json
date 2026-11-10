@@ -3909,5 +3909,11 @@
   "Skills only when wanted": "Skill chỉ khi cần",
   "A Skill is not chosen when you say not to use it.": "Skill không được chọn khi bạn nói không dùng nó.",
   "Launch CoS as administrator": "Khởi chạy CoS với quyền quản trị viên",
-  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Chỉ dành cho Windows. Khi khởi động lần tiếp theo, UAC của Windows sẽ yêu cầu phê duyệt. Sau đó mọi công cụ và tiến trình nền của CoS sẽ có quyền truy cập nâng cao. Hãy tắt nếu không cần thiết."
+  "Windows only. On the next start, Windows UAC asks for approval. Every CoS tool and background process will then have elevated access. Leave off unless necessary.": "Chỉ dành cho Windows. Khi khởi động lần tiếp theo, UAC của Windows sẽ yêu cầu phê duyệt. Sau đó mọi công cụ và tiến trình nền của CoS sẽ có quyền truy cập nâng cao. Hãy tắt nếu không cần thiết.",
+  "Refresh plugins": "Làm mới plugin",
+  "Refreshing plugins": "Đang làm mới plugin",
+  "Checking installed plugins…": "Đang kiểm tra các plugin đã cài đặt…",
+  "Check the Core, Desktop and Plugins tools in ChatGPT": "Kiểm tra công cụ Core, Desktop và Plugins trong ChatGPT",
+  "Close plugin refresh progress": "Đóng tiến trình làm mới plugin",
+  "Installed plugin refresh steps": "Các bước làm mới plugin đã cài đặt"
 }
