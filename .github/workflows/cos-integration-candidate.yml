@@ -3,9 +3,9 @@ name: CoS integration candidate build
 # One-off build for the explicitly requested integration candidate.
 # The existing manual-only fork workflows remain unchanged.
 on:
-  push:
-    branches:
-      - integration/cos-2-1-52-reliability-admin-project-20261110
+  pull_request:
+    branches: [main]
+    types: [synchronize]
   workflow_dispatch:
 
 permissions:
@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   checks:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'integration/cos-2-1-52-reliability-admin-project-20261110'
     name: Typecheck and unit tests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
