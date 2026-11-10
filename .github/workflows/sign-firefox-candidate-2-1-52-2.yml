@@ -1,0 +1,100 @@
+name: Sign CoS Firefox candidate 2.1.52.2 (unlisted)
+
+# One explicitly requested candidate signing attempt. Never publishes a listed add-on.
+on:
+  pull_request:
+    branches:
+      - integration/cos-2-1-52-reliability-admin-project-20261110
+    types: [opened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cos-candidate-firefox-2-1-52-2
+  cancel-in-progress: false
+
+jobs:
+  sign-unlisted:
+    if: github.head_ref == 'build/firefox-candidate-2.1.52.2-20261110' && github.event.pull_request.head.repo.full_name == github.repository
+    name: Sign fork-specific Firefox add-on for self-distribution
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check Mozilla signing credentials
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          if [ -z "$WEB_EXT_API_KEY" ] || [ -z "$WEB_EXT_API_SECRET" ]; then
+            echo "::error::Mozilla signing is not connected. Set encrypted AMO_JWT_ISSUER and AMO_JWT_SECRET GitHub Actions secrets in this fork. No add-on was submitted." >&2
+            exit 1
+          fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify source and prepare fork Firefox package
+        run: |
+          set -euo pipefail
+          npm run verify:privacy
+          npx vitest run --maxWorkers=2 test/firefox-extension-package.test.ts
+          node scripts/build-fork-browser-extensions.mjs
+      - name: Prepare fork Firefox signing version
+        env:
+          FIREFOX_BUILD: '2'
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const sourceVersion = JSON.parse(readFileSync('package.json', 'utf8')).version;
+          const build = process.env.FIREFOX_BUILD;
+          if (!/^[1-9]\d{0,2}$/.test(build)) throw new Error('Firefox build suffix must be 1 through 999');
+          const path = 'release/firefox-extension/manifest.json';
+          const manifest = JSON.parse(readFileSync(path, 'utf8'));
+          if (manifest.version !== sourceVersion) throw new Error('Firefox manifest must match app version');
+          if (manifest.browser_specific_settings?.gecko?.id !== 'companion@brodxi.local') throw new Error('Refusing to sign the official/upstream add-on identity');
+          if (manifest.browser_specific_settings.gecko.update_url) throw new Error('Refusing upstream update URL for fork signing');
+          if (manifest.permissions?.includes('debugger')) throw new Error('Refusing unsupported Firefox debugger permission');
+          manifest.version = sourceVersion + '.' + build;
+          writeFileSync(path, JSON.stringify(manifest, null, 2) + '\n');
+          console.log('Prepared fork-only unlisted Firefox signing version ' + manifest.version);
+          NODE
+      - name: Create human-readable source archive for Mozilla reviewers
+        run: |
+          set -euo pipefail
+          git archive --format=zip --output=release/Chat-On-Steroids-Firefox-Source.zip HEAD \
+            extension scripts package.json package-lock.json LICENSE \
+            docs/FORK-FIREFOX-SIGNING.md .github/workflows/fork-firefox-sign.yml
+          unzip -tq release/Chat-On-Steroids-Firefox-Source.zip
+      - name: Lint self-hosted Firefox package
+        run: npx --yes web-ext@10.7.0 lint --source-dir release/firefox-extension --self-hosted
+      - name: Request Mozilla signing (UNLISTED ONLY)
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+        run: |
+          set -euo pipefail
+          mkdir -p release/firefox-signed
+          npx --yes web-ext@10.7.0 sign --channel=unlisted \
+            --source-dir release/firefox-extension \
+            --upload-source-code release/Chat-On-Steroids-Firefox-Source.zip \
+            --artifacts-dir release/firefox-signed \
+            --approval-timeout 1500000 --no-input
+          find release/firefox-signed -maxdepth 1 -type f -name '*.xpi' -print -quit | grep -q . || {
+            echo "::error::Mozilla has not returned a signed .xpi file. Check signing/review status in the Developer Hub." >&2
+            exit 1
+          }
+      - name: Upload signed XPI and reviewer source archive
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: CoS-Firefox-2.1.52.2-signed
+          path: |
+            release/firefox-signed/*.xpi
+            release/Chat-On-Steroids-Firefox-Source.zip
+          if-no-files-found: error
+          retention-days: 14
