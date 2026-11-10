@@ -4849,7 +4849,7 @@
     CLF_DOM.presentUserPrompts?.(message => userMessageSource(message)?.text ?? null);
     for (const check of pageViewChecks) void check();
     completeDesktopDecision();
-    const markedTurns = markedContinuationTurns();
+    const markedTurns = markedContinuationTurns([...fiberTurns.values()], job);
     const continuationReconciliation = reconcileContinuationMarkers(markedTurns);
     if (continuationReconciliation) await continuationReconciliation;
     if (epoch !== askedEpoch || conversationId !== askedConversation) return false;
@@ -10665,21 +10665,59 @@
     return null;
   }
 
+  /**
+   * A handoff may occupy several adjacent native descriptors after a reload: an
+   * assistant preamble, tool activity, then the final brief. Do not stop at the
+   * first descriptor with prose/calls. A later user message or missing index
+   * fences the response; the newest descriptor must itself prove completion.
+   */
+  function handoffAnswerRun(turns, index) {
+    const run = [];
+    for (let at = index; at < turns.length; at++) {
+      const turn = turns[at];
+      if (!turn) break;
+      const previous = turns[at - 1];
+      if (at > index && ((turn.messages || []).some(message => message.role === 'user') ||
+          (Number.isInteger(previous?.index) && Number.isInteger(turn.index) && turn.index !== previous.index + 1))) break;
+      if (turn.endMessageId || (turn.messages || []).some(message => message.role === 'assistant') ||
+          (turn.calls || []).length > 0) run.push(turn);
+    }
+    return run;
+  }
+
+  /**
+   * A persisted, accepted source id is stronger than a temporarily missing
+   * marker string. Only the current pending ticket can supply that identity.
+   * An explicit conflicting marker is never overridden.
+   */
+  function handoffMarkerForUser(message, pendingJob) {
+    const parsed = markedAs(message.rawText);
+    if (parsed) return parsed;
+    const source = pendingJob?.stage === 'handoff-pending' && pendingJob.sourceSend?.state === 'sent'
+      ? pendingJob.sourceSend.messageId : null;
+    const token = pendingJob?.token;
+    if (!source || (message.rawMessageId || message.messageId) !== source ||
+        typeof token !== 'string' || !/^[A-Za-z0-9_-]{16,64}$/.test(token)) return null;
+    return [null, 'HANDOFF', token];
+  }
+
   /** Finds a unique ChatGPT-authored marked user message and the exact turn it opened. */
-  function markedContinuationTurns(turns = [...fiberTurns.values()]) {
+  function markedContinuationTurns(turns = [...fiberTurns.values()], pendingJob = null) {
     const found = new Map();
     for (let index = 0; index < turns.length; index++) {
       const turn = turns[index];
       for (const message of turn.messages || []) {
         if (message.role !== 'user' || message.stable !== true) continue;
-        const match = markedAs(message.rawText);
+        const match = handoffMarkerForUser(message, pendingJob);
         if (!match) continue;
         const key = `${match[1]}:${match[2]}`;
+        const answerRun = match[1] === 'HANDOFF' ? handoffAnswerRun(turns, index) : null;
         const marked = {
           kind: match[1],
           token: match[2],
           turn,
-          answer: answerTurnFor(turns, index),
+          answerRun,
+          answer: answerRun ? (answerRun.at(-1) || null) : answerTurnFor(turns, index),
           messageId: message.rawMessageId || message.messageId
         };
         found.set(key, found.has(key) ? null : marked);
@@ -10733,9 +10771,10 @@
       token: marked.token,
       sourceMessageId: marked.messageId,
       // A monotonic measure of the exact response, not the page's generating spinner.
-      sourceProgress: Math.min(4_000_000, (marked.answer?.messages || []).reduce(
-        (total, message) => total + String(message.rawText || '').length, 0
-      ) + (marked.answer?.calls || []).filter(call => call?.answered === true).length)
+      sourceProgress: Math.min(4_000_000, (marked.answerRun || (marked.answer ? [marked.answer] : [])).reduce(
+        (total, descriptor) => total + (descriptor.messages || []).reduce(
+          (chars, message) => chars + String(message.rawText || '').length, 0
+        ) + (descriptor.calls || []).filter(call => call?.answered === true).length, 0))
     });
     if (!bound || bound.ok !== true) return continuationRefused(bound) ? 'settled' : false;
     // The app captured the brief from its recorder's exact response to this anchor, which
@@ -10752,7 +10791,8 @@
     const answer = marked.answer;
     if (!answer) return false;
     const terminalId = answer.endMessageId;
-    if (!terminalId || (answer.calls || []).some((call) => !call || call.answered !== true)) return false;
+    if (!terminalId || (marked.answerRun || [answer]).some(descriptor =>
+      (descriptor.calls || []).some(call => !call || call.answered !== true))) return false;
     const terminal = (answer.messages || []).find(
       (message) =>
         message.role === 'assistant' &&
