@@ -3098,6 +3098,7 @@ for (const id of [
   'keepAwake',
   'minimizeToTray',
   'developerMode',
+  'launchAsAdministrator',
   'playfulStatus',
   'playfulContinue',
   'announceTurns',
