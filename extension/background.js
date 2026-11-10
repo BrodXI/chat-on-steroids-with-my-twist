@@ -1456,9 +1456,14 @@ async function drainCommandAcks(targetId = null) {
         entry.detail
       );
       const result = await call(inputReceipt ? '/input/ack' : '/commands/ack', { method: 'POST', body: JSON.stringify(payload) });
-      if (entry.id === targetId) targetResult = result;
+      // An HTTP 200 only proves transport; /input/ack can still answer { ok: false }
+      // when the app has not committed the receipt. Keep the exact durable receipt for
+      // retry instead of declaring the ChatGPT send acknowledged and forgetting it.
+      const inputReceiptAccepted = !inputReceipt || result.data?.ok === true;
+      if (entry.id === targetId) targetResult = result.ok && !inputReceiptAccepted
+        ? { ...result, ok: false, error: 'input_receipt_not_accepted' } : result;
 
-      if (result.ok || result.status === 404 || result.status === 409) {
+      if ((result.ok && inputReceiptAccepted) || result.status === 404 || result.status === 409) {
         if (!inputReceipt && result.ok && result.data?.outcome === 'terminal-failure' && payload.status === 'failed' && !payload.conversationId && entry.source) {
           await retireFailedCommandTab(entry);
         }
