@@ -1,4 +1,6 @@
 {
+  "Administrator": "Администратор",
+  "Administrator access includes system registry changes, software installation, and elevated PowerShell. These cannot be restricted separately in an elevated app. Turn this off and fully quit and reopen CoS normally to remove elevation.": "Права администратора позволяют изменять системный реестр, устанавливать программы и запускать PowerShell с повышенными правами. В приложении с повышенными правами эти возможности нельзя ограничить по отдельности. Чтобы снять повышение прав, отключите этот параметр, полностью закройте CoS и запустите его в обычном режиме.",
   "Steps for you, a limit on busy chats, and Telegram notifications.": "Шаги для вас, лимит для занятых чатов и уведомления Telegram.",
   "Steps for you": "Шаги для вас",
   "When ChatGPT needs something only you can do, it hands you the step. You run it and mark it done.": "Когда ChatGPT нужно то, что можете сделать только вы, он передаёт вам шаг. Вы выполняете его и отмечаете как выполненный.",

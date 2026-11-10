@@ -1,4 +1,6 @@
 {
+  "Administrator": "Quản trị viên",
+  "Administrator access includes system registry changes, software installation, and elevated PowerShell. These cannot be restricted separately in an elevated app. Turn this off and fully quit and reopen CoS normally to remove elevation.": "Quyền quản trị viên cho phép thay đổi sổ đăng ký hệ thống, cài đặt phần mềm và chạy PowerShell với quyền nâng cao. Không thể hạn chế riêng từng quyền trong ứng dụng đã nâng quyền. Để bỏ quyền nâng cao, hãy tắt tùy chọn này, thoát hoàn toàn CoS và mở lại bình thường.",
   "Steps for you, a limit on busy chats, and Telegram notifications.": "Các bước dành cho bạn, giới hạn cho các cuộc trò chuyện đang bận và thông báo Telegram.",
   "Steps for you": "Các bước dành cho bạn",
   "When ChatGPT needs something only you can do, it hands you the step. You run it and mark it done.": "Khi ChatGPT cần điều chỉ bạn mới làm được, nó giao bước đó cho bạn. Bạn chạy nó và đánh dấu là xong.",

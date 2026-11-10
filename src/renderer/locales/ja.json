@@ -1,4 +1,6 @@
 {
+  "Administrator": "管理者",
+  "Administrator access includes system registry changes, software installation, and elevated PowerShell. These cannot be restricted separately in an elevated app. Turn this off and fully quit and reopen CoS normally to remove elevation.": "管理者アクセスには、システムレジストリの変更、ソフトウェアのインストール、昇格した PowerShell の実行が含まれます。昇格したアプリでは個別に制限できません。昇格を解除するには、この設定をオフにし、CoS を完全に終了して通常どおり再起動してください。",
   "Steps for you, a limit on busy chats, and Telegram notifications.": "あなた向けのステップ、忙しいチャットの上限、Telegram 通知。",
   "Steps for you": "あなた向けのステップ",
   "When ChatGPT needs something only you can do, it hands you the step. You run it and mark it done.": "ChatGPT があなたにしかできないことを必要とするとき、そのステップを渡します。実行して、完了にしてください。",

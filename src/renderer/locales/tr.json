@@ -1,4 +1,6 @@
 {
+  "Administrator": "Yönetici",
+  "Administrator access includes system registry changes, software installation, and elevated PowerShell. These cannot be restricted separately in an elevated app. Turn this off and fully quit and reopen CoS normally to remove elevation.": "Yönetici erişimi sistem kayıt defteri değişikliklerini, yazılım yüklemeyi ve yükseltilmiş PowerShell'i kapsar. Yükseltilmiş bir uygulamada bunlar ayrı ayrı kısıtlanamaz. Yükseltmeyi kaldırmak için bu seçeneği kapatın, CoS'tan tamamen çıkın ve normal şekilde yeniden açın.",
   "Steps for you, a limit on busy chats, and Telegram notifications.": "Sizin için adımlar, yoğun sohbetler için bir sınır ve Telegram bildirimleri.",
   "Steps for you": "Sizin için adımlar",
   "When ChatGPT needs something only you can do, it hands you the step. You run it and mark it done.": "ChatGPT yalnızca sizin yapabileceğiniz bir şeye ihtiyaç duyduğunda adımı size verir. Siz çalıştırır ve yapıldı olarak işaretlersiniz.",

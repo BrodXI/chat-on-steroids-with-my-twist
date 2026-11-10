@@ -1,4 +1,6 @@
 {
+  "Administrator": "管理员",
+  "Administrator access includes system registry changes, software installation, and elevated PowerShell. These cannot be restricted separately in an elevated app. Turn this off and fully quit and reopen CoS normally to remove elevation.": "管理员访问权限包括修改系统注册表、安装软件和运行提升权限的 PowerShell。在已提升权限的应用中，无法单独限制这些权限。若要取消权限提升，请关闭此选项，完全退出 CoS，再以普通方式重新打开。",
   "Steps for you, a limit on busy chats, and Telegram notifications.": "为你准备的步骤、忙碌聊天的上限，以及 Telegram 通知。",
   "Steps for you": "为你准备的步骤",
   "When ChatGPT needs something only you can do, it hands you the step. You run it and mark it done.": "当 ChatGPT 需要只有你能做的事时，它会把这一步交给你。你执行后标记为已完成。",

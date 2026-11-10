@@ -156,6 +156,8 @@
 .workspace-column { display: contents; }
 .workspace-section { grid-column: 1; min-width: 0; }
 .workspace-permissions { grid-row: 1; }
+.workspace-administrator { border-top: 1px solid var(--line); padding: 12px 0 0; }
+.workspace-administrator h3 { margin: 0; padding: 0 14px 6px; color: var(--ink); font-size: calc(13px * var(--text-scale, 1)); font-weight: 650; }
 #foldersCard { grid-row: 2; }
 .workspace-health { grid-row: 3; }
 .workspace-activity { grid-row: 4; }

@@ -1,4 +1,6 @@
 {
+  "Administrator": "Administrador",
+  "Administrator access includes system registry changes, software installation, and elevated PowerShell. These cannot be restricted separately in an elevated app. Turn this off and fully quit and reopen CoS normally to remove elevation.": "El acceso de administrador incluye cambios en el registro del sistema, instalación de software y PowerShell con privilegios elevados. No se pueden restringir por separado en una aplicación elevada. Desactiva esta opción, cierra CoS por completo y vuelve a abrirlo normalmente para quitar la elevación.",
   "Steps for you, a limit on busy chats, and Telegram notifications.": "Pasos para ti, un límite para chats ocupados y notificaciones de Telegram.",
   "Steps for you": "Pasos para ti",
   "When ChatGPT needs something only you can do, it hands you the step. You run it and mark it done.": "Cuando ChatGPT necesita algo que solo tú puedes hacer, te entrega el paso. Lo ejecutas y lo marcas como hecho.",
