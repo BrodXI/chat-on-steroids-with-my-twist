@@ -11233,7 +11233,7 @@
 
     } finally {
       // A stale watcher must not unlock a new chat/turn's automation.
-      if (alive && conversationId === forId && epoch === forEpoch &&
+      if (conversationId === forId && epoch === forEpoch &&
           (goalTurnId === forTurn || goalTurnId === null)) {
         goalBusy = false;
         renderControl();
