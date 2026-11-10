@@ -1,0 +1,97 @@
+name: CoS integration candidate build
+
+# One-off build for the explicitly requested integration candidate.
+# The existing manual-only fork workflows remain unchanged.
+on:
+  push:
+    branches:
+      - integration/cos-2-1-52-reliability-admin-project-20261110
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cos-integration-candidate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck and unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Verify privacy and types
+        run: |
+          npm run verify:privacy
+          npm run typecheck
+      - name: Unit tests (bounded workers)
+        run: npx vitest run --maxWorkers=2 --exclude test/mcp-shutdown.test.ts --exclude test/computer.test.ts
+      - name: Exclusive unit tests
+        run: npx vitest run --maxWorkers=1 test/computer.test.ts test/mcp-shutdown.test.ts
+
+  browser-extensions:
+    needs: checks
+    name: Build Chrome and Firefox companion extensions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify extension source and Firefox manifest
+        run: npx vitest run --maxWorkers=2 test/firefox-extension-package.test.ts test/extension.test.ts test/handoff-answer-recovery.test.ts test/project-compact-send.test.ts test/goal-settling.test.ts test/windows-admin-launch.test.ts
+      - name: Package and verify browser extensions
+        run: node scripts/build-fork-browser-extensions.mjs
+      - name: Validate Firefox development build
+        run: npx --yes web-ext@10.7.0 lint --source-dir release/firefox-extension --self-hosted
+      - name: Upload downloadable browser extensions
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fork-browser-extensions-${{ github.run_number }}
+          path: |
+            release/Chat-On-Steroids-Extension.zip
+            release/Chat-On-Steroids-Firefox-Unsigned.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-installer:
+    needs: checks
+    name: Build Windows x64 and smoke-test packaged runtime
+    runs-on: windows-2025
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Package and smoke-test
+        run: npm run dist:x64
+      - name: Save unsigned Windows installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fork-windows-x64-${{ github.run_number }}
+          path: release/Chat-On-Steroids-Setup-x64.exe
+          if-no-files-found: error
+          retention-days: 3
