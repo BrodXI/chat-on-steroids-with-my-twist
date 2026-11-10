@@ -13,6 +13,7 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { wakeBrowserWork } from '../browser-wake.js';
 import type { AssetRef, FileChange, RunningToolActivity, ToolOutcome } from '../../shared/session.js';
 import type { OutputPublication, ProcessCompletion } from '../codex/unified-exec.js';
 
@@ -278,6 +279,11 @@ export async function trackInFlight<T>(context: CallContext, fn: () => Promise<T
     return await fn();
   } finally {
     running.delete(context);
+    // The bridge withholds a queued input while this call can still change its chat.
+    // A finished tool is a new admission boundary: ask the browser to re-read the
+    // durable outbox now instead of leaving the message behind its 30-second alarm.
+    // This is only a wake-up; the bridge and page still enforce their send checks.
+    if (running.size === 0) wakeBrowserWork();
   }
 }
 
