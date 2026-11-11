@@ -806,6 +806,51 @@ describe('desktop input delivery and helper ownership', () => {
     expect(sends()).toBe(1);
     expect(live.sent.filter(message => message.ack)).toHaveLength(1);
   });
+  it.each(['same text', 'edited text', 'empty', 'attachment'] as const)('handles a fresh-turn composer redraw before authorization (%s)', async change => {
+    let directTurn: { id: string; startedAt: number };
+    const continuation = 'Continue the task from where you are. (Chat On Steroids starts a fresh turn every so often so long work stays reliable; nothing else changed.)';
+    live = await nonProHarness(`https://chatgpt.com/c/${chatA}`, {
+      desktop_input: message => {
+        if (message.authorize || message.ack || message.fail) return { ok: true, data: { ok: true } };
+        return { ok: true, data: { input: claimed({ directTurn, purpose: 'rotation', text: continuation }) } };
+      }
+    });
+    startGenerating(live.document);
+    live.hook.observe(); await live.hook.flush();
+    const start = emitted(live.sent, 'turn_start').at(-1)!;
+    directTurn = { id: start.event.turnId as string, startedAt: start.event.time as number };
+    expect(composerText(live.document)).toBe('');
+    const sends = watchSend(live.document);
+    live.document.querySelector('[data-testid="send-button"]')!.addEventListener('click', () => {
+      userTurn(live!.document, 'rotation-redraw', continuation, { sent: false });
+      live!.document.querySelector('#prompt-textarea')!.textContent = '';
+    });
+    const api = live.window.CLF_DOM;
+    const upload = api.uploadImages;
+    api.uploadImages = async (...args: any[]) => {
+      const result = await upload(...args);
+      const box = live!.document.querySelector('#prompt-textarea')!;
+      const next = box.cloneNode(true) as Element;
+      if (change === 'edited text') next.textContent = 'A real user draft';
+      if (change === 'empty') next.textContent = '';
+      box.replaceWith(next);
+      if (change === 'attachment') {
+        const tile = live!.document.createElement('button');
+        tile.setAttribute('aria-label', 'Remove file 1: draft.png');
+        next.closest('form')!.append(tile);
+      }
+      return result;
+    };
+    const result = await live.runtimeMessage({ type: 'clf-desktop-input', id: inputId, conversationId: chatA, directTurn });
+    expect(result).toEqual({ ok: change === 'same text' });
+    expect(sends()).toBe(change === 'same text' ? 1 : 0);
+    expect(live.sent.filter(message => message.authorize)).toHaveLength(change === 'same text' ? 1 : 0);
+    expect(live.sent.filter(message => message.ack)).toHaveLength(change === 'same text' ? 1 : 0);
+    const failures = live.sent.filter(message => message.fail);
+    if (change === 'same text' || change === 'empty') expect(failures.some(message => /your draft was preserved/i.test(message.error))).toBe(false);
+    if (change === 'edited text') expect(composerText(live.document)).toBe('A real user draft');
+    if (change === 'attachment') expect(live.document.querySelector('[aria-label="Remove file 1: draft.png"]')).not.toBeNull();
+  });
   // 2026-10-20, Loop chats on the VM: when ChatGPT shows only Stop at the tool result, it offers no
   // Send for the continue. The page declines at once, in the app's words, so the call held for it
   // answers now instead of waiting out the hold, and a later tool result tries again.
@@ -1440,20 +1485,20 @@ describe('desktop input delivery and helper ownership', () => {
    * message sat in ChatGPT until the user sent it by hand. One rebind is allowed before anything
    * asked to send; a different text, a plain input or an already authorized send still fails.
    */
-  it.each(['recovery', 'other text', 'plain input', 'after authorization'] as const)(
+  it.each(['recovery', 'other text', 'plain input', 'after authorization', 'rotation', 'rotation changed text', 'rotation after authorization'] as const)(
     'follows a remounted composer once before Send authorization (%s)', async kind => {
     let release!: () => void;
     const held = new Promise<void>(resolve => { release = resolve; });
     live = await harness(`https://chatgpt.com/c/${chatA}`, {
       desktop_input: async message => {
-        if (message.authorize && kind === 'after authorization') await held;
+        if (message.authorize && (kind === 'after authorization' || kind === 'rotation after authorization')) await held;
         return { ok: true, data: message.authorize || message.ack || message.fail
-          ? { ok: true } : { input: claimed(kind === 'plain input' ? {} : { recovery: {
+          ? { ok: true } : { input: claimed(kind.startsWith('rotation') ? { purpose: 'rotation' } : kind === 'plain input' ? {} : { recovery: {
             questionId: 'source-question', pro: false, busyUntil: Date.now() + 60_000, phase: 'ready' } }) } };
       }
     }, () => undefined, false, true);
     const button = live.document.querySelector<HTMLButtonElement>('[data-testid="send-button"]')!;
-    if (kind !== 'after authorization') button.disabled = true;
+    if (kind !== 'after authorization' && kind !== 'rotation after authorization') button.disabled = true;
     const sends = watchSend(live.document);
     live.document.querySelector('[data-testid="send-button"]')!.addEventListener('click', () => {
       userTurn(live!.document, 'remount-question', text, { sent: false });
@@ -1465,23 +1510,23 @@ describe('desktop input delivery and helper ownership', () => {
     expect(sends()).toBe(0);
     const composer = live.document.querySelector('#prompt-textarea')!;
     const replacement = composer.cloneNode(true) as Element;
-    if (kind === 'other text') replacement.textContent = 'A sentence I was still writing';
+    if (kind === 'other text' || kind === 'rotation changed text') replacement.textContent = 'A sentence I was still writing';
     composer.replaceWith(replacement);
     button.disabled = false;
     release();
     const result = await accepting;
     await settle();
     const authorizations = live.sent.filter(message => message.type === 'desktop_input' && message.authorize);
-    if (kind === 'recovery') {
+    if (kind === 'recovery' || kind === 'rotation') {
       expect(result).toEqual({ ok: true });
       expect(sends()).toBe(1);
       expect(authorizations).toHaveLength(1);
     } else {
       expect(result).toEqual({ ok: false });
       expect(sends()).toBe(0);
-      expect(authorizations).toHaveLength(kind === 'after authorization' ? 1 : 0);
+      expect(authorizations).toHaveLength(kind === 'after authorization' || kind === 'rotation after authorization' ? 1 : 0);
     }
-    if (kind === 'other text') expect(composerText(live.document)).toBe('A sentence I was still writing');
+    if (kind === 'other text' || kind === 'rotation changed text') expect(composerText(live.document)).toBe('A sentence I was still writing');
   });
 
   it('clears its exact remounted recovery draft when Send authorization is withdrawn', async () => {

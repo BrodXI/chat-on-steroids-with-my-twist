@@ -13847,6 +13847,7 @@
     let sent = false;
     let draft = null;
     let withdrawableRecoveryDraft = false;
+    let withdrawableRotationDraft = false;
     let claimedSilence = null;
     // The first reason this attempt ended before Send, reported with its release (#820).
     let withdrawReason = null;
@@ -13906,6 +13907,7 @@
       if (!input) return false;
       if (!onTarget()) { noteWithdraw(offTarget()); return false; }
       withdrawableRecoveryDraft = Boolean(input.recovery) && !(input.images || []).length && !(input.attachments || []).length;
+      withdrawableRotationDraft = input.purpose === 'rotation' && !(input.images || []).length && !(input.attachments || []).length;
       // A chat ChatGPT deleted fails every check after it (its tab moves home); say why instead.
       const fail = async (error, detail) => {
         const why = target && deletedConversations.has(target.toLowerCase()) ? CONVERSATION_DELETED : error;
@@ -14018,13 +14020,14 @@
         ));
       const sendingTarget = submittedSendLifetime(target, forEpoch);
       draft = CLF_DOM.captureComposerDraft(input.text, () => sendAttempted ? sendingTarget() : onTarget());
-      // #744: a recovery's own text survives a composer remount before Send is authorized. The
-      // lease may follow it once; after authorization a lost editor stays a failure.
+      // #744: an automatic recovery or fresh-turn continue can survive a composer remount
+      // before Send authorization. Follow only its exact untouched text once; after
+      // authorization a lost editor stays a failure. Ordinary user drafts keep their fence.
       let authorizing = false;
       // The app's answer to this page's one authorization request, once asked.
       let authorization = null;
       const draftCurrent = () => draft.current() ||
-        (withdrawableRecoveryDraft && !authorizing && !sendAttempted && draft.rebind() && draft.current());
+        ((withdrawableRecoveryDraft || withdrawableRotationDraft) && !authorizing && !sendAttempted && draft.rebind() && draft.current());
       const files = [];
       for (const attachment of input.attachments || []) {
         const parts = [];
@@ -14050,10 +14053,15 @@
         'Attachment upload was not confirmed. Check the unsent draft and any file error in ChatGPT before trying again.'
       ));
       await Promise.resolve();
-      if (!onTarget() || !draftCurrent() || sendText(CLF_DOM.composerText()) !== sendText(input.text)) return fail(t(
-        'content_delivery_draft_preserved',
-        'The composer changed; your draft was preserved'
-      ));
+      if (!onTarget()) return fail(t('content_delivery_chat_changed', 'The chat changed before delivery.'));
+      if (!draftCurrent() || sendText(CLF_DOM.composerText()) !== sendText(input.text)) {
+        // Losing a lease is not evidence of a user's draft. An empty editor or our exact
+        // automatic continuation can remain after a native redraw or a turn transition.
+        const shown = sendText(CLF_DOM.composerText());
+        if (!CLF_DOM.hasComposerAttachments() && (!shown || shown === sendText(input.text)))
+          return fail(t('content_delivery_composer_changed', 'The ChatGPT composer changed before sending'));
+        return fail(t('content_delivery_draft_preserved', 'The composer changed; your draft was preserved'));
+      }
       const previousUserId = CLF_DOM.messages().filter(row => row.role === 'user').at(-1)?.id;
       rememberUserSend();
       const submittedText = sendText(CLF_DOM.composerText());
@@ -14240,7 +14248,8 @@
       if (draft) {
         try {
           const cleared = !sendAttempted ? await draft.clear() : false;
-          if (!sendAttempted && !cleared && withdrawableRecoveryDraft) draft.withdraw();
+          if (!sendAttempted && !cleared && (withdrawableRecoveryDraft ||
+              (withdrawableRotationDraft && alive && epoch === forEpoch && CLF_DOM.conversationId() === target))) draft.withdraw();
         }
         catch { /* Unprovable cleanup preserves the draft; never keep the input slot busy. */ }
         finally { draft.dispose(); }
