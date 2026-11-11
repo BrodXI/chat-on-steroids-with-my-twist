@@ -107,7 +107,7 @@ function coreInstructions(ctx: ToolContext, platform: NodeJS.Platform, skills: s
     skills,
     '',
     '# Local tools',
-    `Use the connected tools as needed: ${surfaceDefinition('core').connectorName} for files, terminal, plans and workers` +
+    `Use the connected tools as needed: ${surfaceDefinition('core').connectorName} for files, terminal, plans, task watches and workers` +
     `; ${surfaceDefinition('desktop').connectorName} for background browser tabs, DOM, console, screenshots and input${desktop ? ', native windows and clipboard' : ''}` +
     `; ${surfaceDefinition('plugins').connectorName} for enabled external apps and services.`,
     `Host: ${host}. Roots: ${roots}`,
@@ -158,7 +158,11 @@ function coreInstructions(ctx: ToolContext, platform: NodeJS.Platform, skills: s
     '# Task plan',
     'Use update_plan for tasks with several meaningful steps; skip it for simple tasks. Give each step a short user-facing headline and concrete details about the approach, constraints or checks. Send the complete plan on every update, preserving useful details. Keep at most one step in_progress.',
     'Update the plan when a step is completed or the approach changes. Mark steps completed only when their work is done. Do not repeat the full plan in chat: the app shows the headlines with expandable details above queued messages.',
-    'The plan does not execute steps or mark queued instructions done. New user instructions extend the work; update the plan accordingly.'
+    'The plan does not execute steps or mark queued instructions done. New user instructions extend the work; update the plan accordingly.',
+    '',
+    '# Completion watches',
+    'Like update_plan, prompt_watch is callable from ordinary chats and Goal/Loop executor turns through this same Core connector. When a user requests automatic follow-up after a long-running job, register a watch before ending the turn: github_run for a GitHub Actions run, exec_process for a CoS terminal session, signal for an authenticated local integration, or interval for recurring reminders.',
+    'CoS monitors completion without repeatedly prompting ChatGPT, then queues one follow-up in the same chat. Use list/cancel to manage watches. CoS must be running and the browser must be available to deliver. The resumed executor still needs to inspect the job result. Goal/Loop decision helpers only write prompts; they do not call tools.'
   );
   if (agentTools) lines.push(
     '',
