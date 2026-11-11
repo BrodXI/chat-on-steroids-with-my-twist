@@ -395,6 +395,31 @@ describe('native Project entry readiness', () => {
     expect(clicks).toBe(1);
   });
 
+  it('keeps a Project Resume alive when its correct Project home route loads before the editor hydrates', async () => {
+    // App log 2026-11-11: repeated Project resumes failed with
+    // transition-timeout:last=composer-not-ready although the correct Project route opened.
+    // Loading the native route and hydrating the new composer are separate provider stages.
+    const link = sourceLink();
+    box.textContent = '';
+    let clicks = 0;
+    link.addEventListener('click', event => {
+      event.preventDefault(); clicks++;
+      dom.reconfigure({ url: projectUrl });
+      box.remove();
+      setTimeout(() => document.querySelector('form')!.prepend(box), 18_000);
+    });
+    const failure = vi.fn();
+    let settled: boolean | null = null;
+    const entered = api.enterProject(entry, undefined, failure).then(result => { settled = result; return result; });
+    await vi.advanceTimersByTimeAsync(13_000);
+    expect(clicks).toBe(1);
+    expect(settled).toBeNull();
+    expect(failure).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(await entered).toBe(true);
+    expect(failure).not.toHaveBeenCalled();
+  });
+
   it('lets a large source chat take longer than the transition deadline to load (#212)', async () => {
     // The published reproduction: a source ready at 13 s failed against the old shared 12 s.
     const link = sourceLink();
@@ -475,7 +500,7 @@ describe('native Project entry readiness', () => {
     });
     const failure = vi.fn();
     const entered = api.enterProject(entry, undefined, failure);
-    await vi.advanceTimersByTimeAsync(12_500);
+    await vi.advanceTimersByTimeAsync(60_500);
     expect(await entered).toBe(false);
     expect(failure).toHaveBeenCalledWith('transition-timeout:last=composer-not-ready');
   });
@@ -518,7 +543,7 @@ describe('native Project entry readiness', () => {
     });
     const failure = vi.fn();
     const entered = api.enterProject(entry, undefined, failure);
-    await vi.advanceTimersByTimeAsync(12_500);
+    await vi.advanceTimersByTimeAsync(60_500);
     expect(await entered).toBe(cleared);
     if (cleared) expect(box.textContent).toBe('');
     else {
@@ -568,7 +593,7 @@ describe('native Project entry readiness', () => {
     });
     const failure = vi.fn();
     const entered = api.enterProject(entry, undefined, failure);
-    await vi.advanceTimersByTimeAsync(12_500);
+    await vi.advanceTimersByTimeAsync(60_500);
     expect(await entered).toBe(cleared);
     if (!cleared) expect(failure).toHaveBeenCalledWith('transition-timeout:last=composer-not-ready');
   });
@@ -583,7 +608,7 @@ describe('native Project entry readiness', () => {
     });
     const failure = vi.fn();
     const entered = api.enterProject(entry, undefined, failure);
-    await vi.advanceTimersByTimeAsync(12_500);
+    await vi.advanceTimersByTimeAsync(60_500);
     expect(await entered).toBe(false);
     expect(failure).toHaveBeenCalledWith('transition-timeout:last=source-turns-remain');
   });

@@ -3719,6 +3719,10 @@ var CLF_DOM = (() => {
    */
   const PROJECT_SOURCE_READY_MS = 60_000;
   const PROJECT_TRANSITION_MS = 12_000;
+  // After the correct Project URL loads, ChatGPT can spend considerably longer mounting
+  // its new editor. Do not spend the short *navigation* deadline on editor hydration:
+  // real automatic resumes repeatedly timed out here while the Project route was correct.
+  const PROJECT_HOME_READY_MS = 60_000;
   /** Clicks again after ChatGPT's own route rewrite drops the first one; two rewrites are seen. */
   const PROJECT_RECLICKS = 2;
 
@@ -3744,6 +3748,7 @@ var CLF_DOM = (() => {
       projectHomeId(new URL(link.href, location.href).pathname) === entry.id);
     return new Promise(resolve => {
       let clicked = false, done = false, lastObservation = 'source-not-ready', residueClears = 0;
+      let homeHydrating = false;
       // Where the source chat was when the link was clicked, and how many times its own route
       // rewrite has since taken that click away.
       let clickedPath = '', reclicks = 0;
@@ -3764,6 +3769,14 @@ var CLF_DOM = (() => {
         // an empty, writable editor is; the caller still refuses to send while a chat id remains.
         // Turns of the earlier pages ChatGPT keeps mounted, undisplayed, are not on this page.
         if (clicked && projectHomeId() === entry.id) {
+          if (!homeHydrating) {
+            homeHydrating = true;
+            clearTimeout(timer);
+            timer = setTimeout(
+              () => finish(false, 'transition-timeout:last=' + lastObservation),
+              PROJECT_HOME_READY_MS
+            );
+          }
           if (!composer()?.isConnected || !composerSubmitReady()) {
             // An earlier brief of the app's own that ChatGPT kept in this Project home (#2068).
             // ChatGPT can restore the draft after it was emptied, so this may happen again, a few times only.
@@ -3782,6 +3795,16 @@ var CLF_DOM = (() => {
           return;
         }
         if (clicked) {
+          // A provider route rewrite may return to the source after briefly showing Project
+          // home. Only the actual Project URL earns the longer editor-hydration budget.
+          if (homeHydrating) {
+            homeHydrating = false;
+            clearTimeout(timer);
+            timer = setTimeout(
+              () => finish(false, 'transition-timeout:last=' + lastObservation),
+              PROJECT_TRANSITION_MS
+            );
+          }
           // A replacement tab opens the source at /c/<id>, and ChatGPT then rewrites that route
           // twice (/g/<project>/c/<id>, then the same with the Project's name). A click that lands
           // between the two is taken by the router and then dropped by its own second rewrite: the
