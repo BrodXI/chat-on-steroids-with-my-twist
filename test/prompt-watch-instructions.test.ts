@@ -3,7 +3,7 @@ import { getConfig } from '../src/main/config.js';
 import { serverInstructions } from '../src/main/mcp/instructions.js';
 import { surfaceDefinition } from '../src/main/mcp/surfaces.js';
 import { DEFAULT_CAPABILITIES } from '../src/shared/types.js';
-import { DEFAULT_GOAL_LOOP_SYSTEM_PROMPT, DEFAULT_GOAL_OBJECTIVE_SYSTEM_PROMPT } from '../src/shared/goal.js';
+import { DEFAULT_GOAL_LOOP_SYSTEM_PROMPT, DEFAULT_GOAL_OBJECTIVE_SYSTEM_PROMPT, GOAL_LOOP_TRAILER, GOAL_OBJECTIVE_TRAILER } from '../src/shared/goal.js';
 
 const settings = getConfig().goal;
 const saved = { enabled: settings.enabled, mode: settings.mode };
@@ -46,5 +46,9 @@ it('does not offer watcher instructions when session tools are unavailable', () 
 it('keeps Goal and Loop decision helpers prompt-only: the executor calls the watcher', () => {
   for (const prompt of [DEFAULT_GOAL_OBJECTIVE_SYSTEM_PROMPT, DEFAULT_GOAL_LOOP_SYSTEM_PROMPT]) {
     expect(prompt).toContain('Do not execute the task, call tools');
+  }
+  for (const trailer of [GOAL_OBJECTIVE_TRAILER, GOAL_LOOP_TRAILER]) {
+    expect(trailer).toContain('Core prompt_watch');
+    expect(trailer).toContain('prompt writer cannot call tools');
   }
 });
