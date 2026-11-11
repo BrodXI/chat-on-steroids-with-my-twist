@@ -279,11 +279,12 @@ export async function trackInFlight<T>(context: CallContext, fn: () => Promise<T
     return await fn();
   } finally {
     running.delete(context);
-    // The bridge withholds a queued input while this call can still change its chat.
-    // A finished tool is a new admission boundary: ask the browser to re-read the
-    // durable outbox now instead of leaving the message behind its 30-second alarm.
-    // This is only a wake-up; the bridge and page still enforce their send checks.
-    if (running.size === 0) wakeBrowserWork();
+    // A completed call may free its own chat while other chats' tools still run.
+    // Wake when this owner has no running work left; an unproven owner can have
+    // blocked every chat, so always recheck on its completion. This only asks
+    // the browser to check the durable outbox, never authorizes a Send.
+    const owner = exactOwner(context);
+    if (owner === null || countFor(running, owner) === 0) wakeBrowserWork();
   }
 }
 

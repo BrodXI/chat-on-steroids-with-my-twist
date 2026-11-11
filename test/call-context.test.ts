@@ -87,6 +87,30 @@ describe('what a chat’s calls are doing', () => {
 });
 
 describe('local calls still running', () => {
+  it('wakes a finished chat even while an unrelated chat still has a running tool', async () => {
+    const wake = vi.spyOn(browserWake, 'wakeBrowserWork').mockImplementation(() => undefined);
+    let finishA!: () => void;
+    let finishB!: () => void;
+    const a = trackInFlight(callFrom('conversation-a'), () => new Promise<void>(resolve => { finishA = resolve; }));
+    const b = trackInFlight(callFrom('conversation-b'), () => new Promise<void>(resolve => { finishB = resolve; }));
+    try {
+      expect(runningToolCalls('conversation-a')).toBe(1);
+      expect(runningToolCalls('conversation-b')).toBe(1);
+      finishA();
+      await a;
+      expect(runningToolCalls('conversation-a')).toBe(0);
+      expect(runningToolCalls('conversation-b')).toBe(1);
+      expect(wake).toHaveBeenCalledTimes(1);
+      finishB();
+      await b;
+      expect(wake).toHaveBeenCalledTimes(2);
+    } finally {
+      finishA();
+      finishB();
+      await Promise.all([a, b]);
+      wake.mockRestore();
+    }
+  });
   it('wakes queued browser delivery when a tool finishes without making the still-running call sendable', async () => {
     const wake = vi.spyOn(browserWake, 'wakeBrowserWork').mockImplementation(() => undefined);
     const first = callFrom('conversation-a');
