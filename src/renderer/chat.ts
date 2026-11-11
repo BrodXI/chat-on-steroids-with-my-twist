@@ -127,6 +127,7 @@ import { firstTurnStart, renderTurnChanges, turnEditCount, turnFinished, turnFro
 import { initSharePage } from './share-page.js';
 import { initFeedbackDialog } from './feedback-dialog.js';
 import { createChatgptProjectPicker } from './chatgpt-project-picker.js';
+import { initProjectImportDialogs } from './project-import-dialogs.js';
 import { openRelatedFolders } from './related-folders-dialog.js';
 import { initScheduleDialog } from './schedule-dialog.js';
 import { nextRunAfter, sameLocalDay, type ScheduleRepeat } from '../shared/schedule.js';
@@ -2267,7 +2268,7 @@ function projectSortEntries(groupOf: typeof projectGroup = projectGroup): Array<
 /** The project row's hover text: its folder and, when it has some, its related folders (#1689). */
 function projectTooltip(project: LocalProject): string {
   const related = (project.relatedFolders ?? []).map(folder => folder.split(/[\\/]/).filter(Boolean).pop() ?? folder);
-  return related.length ? `${project.path}\n${t('Related folders: {0}', [related.join(', ')])}` : project.path;
+  return [project.path, ...(project.github ? [project.github] : []), ...(related.length ? [t('Related folders: {0}', [related.join(', ')])] : [])].join('\n');
 }
 
 /**
@@ -10227,6 +10228,22 @@ export function initChat(next: Deps): void {
     showAddedProject(project, sshDialogGeneration);
     offerChatgptProject(project, known, asked);
   }, async () => ({ asked: await chatgptProjectPicker.hasChoices(), known: new Set(projects.map(row => row.id)) }));
+  let githubProjectGeneration = 0;
+  const importDialogs = initProjectImportDialogs(api, {
+    githubAdded: project => showAddedProject(project, githubProjectGeneration),
+    chatgptSynced: result => {
+      if (result.created.length || result.updated.length) {
+        ++sessionsLoadGeneration;
+        const changes = [...result.created, ...result.updated];
+        const changedIds = new Set(changes.map(row => row.id));
+        projects = [...projects.filter(row => !changedIds.has(row.id)), ...changes];
+        for (const project of result.created) expandedProjects.add(project.id);
+        paintSessions();
+      }
+      toast(t('ChatGPT Projects synced: {0} new, {1} updated, {2} already present.',
+        [result.created.length, result.updated.length, result.skipped]));
+    }
+  });
   // A folder on this computer, or one on a server (#1469).
   $('addProject').addEventListener('click', event => {
     event.preventDefault();
@@ -10234,10 +10251,12 @@ export function initChat(next: Deps): void {
       owner: 'add-project',
       // The Inbox hides the Projects heading and opens this from its own add button: the menu sits there.
       anchor: () => $('chatList').querySelector<HTMLElement>('[data-inbox-control="add"]') ?? document.getElementById('addProject'),
-      label: () => t('Add a project folder'),
+      label: () => t('Add a project'),
       items: () => [
         { action: 'add-local-project', label: () => t('Folder on this computer…'), icon: 'i-folder', run: () => void addLocalProject() },
-        { action: 'add-ssh-project', label: () => t('Folder on a server (SSH)…'), icon: 'i-terminal', run: () => { sshDialogGeneration = selectionGeneration; sshProjectDialog.open(); } }
+        { action: 'add-ssh-project', label: () => t('Folder on a server (SSH)…'), icon: 'i-terminal', run: () => { sshDialogGeneration = selectionGeneration; sshProjectDialog.open(); } },
+        { action: 'add-github-project', label: () => t('GitHub repository…'), icon: 'i-git-branch', run: () => { githubProjectGeneration = selectionGeneration; importDialogs.openGithub(); } },
+        { action: 'sync-chatgpt-projects', label: () => t('Sync ChatGPT web Projects…'), icon: 'i-loop', separated: true, run: () => void importDialogs.openChatgpt() }
       ]
     });
   });

@@ -93,6 +93,7 @@ import { effectiveCapabilities, getConfig, updateConfig, MAX_MCP_INSTRUCTIONS_CH
 import { UI_LANGUAGES } from '../shared/ui-language.js';
 import { CHATGPT_PROJECT_ID, PROJECT_COLORS } from '../shared/projects.js';
 import { chatgptProjectChoices } from './chatgpt-project-catalog.js';
+import { cloneGitHubProject } from './github-project.js';
 import { bridgePortSelection } from './bridge-ports.js';
 import { clearAllGoalSwitches, draftTaskPlan, listGoalModels, MODEL_PAGE_SIZE, retireGoalDrafts, goalBackendFor, goalSwitchFor, setGoalSwitchNow, setGoalReplyActiveNow, setGoalObjectiveNow } from './goal.js';
 import { forgetExposedSurface } from './mcp/server.js';
@@ -111,7 +112,7 @@ import type { WorkerWorktreeCleanupOffer } from '../shared/session.js';
 import { unifiedExecManager } from './codex/manager.js';
 import { inFlightToolCalls } from './mcp/call-context.js';
 import { RESERVED_ROOT_NAMES, uniqueRootName, validateNewRoot, SandboxError, resolvePath } from './sandbox.js';
-import { addProject, addRemoteProject, createChatgptProjectFor, linkChatgptProject, unlinkChatgptProject, expireArmedProjectCreates, getSessionProject, listProjects, localProjectPath, moveChatWithGroup, onProjectLinkChange, projectWorkspace, relatedFolderViews, removeProject, retryProjectCreate, setProjectColor, setProjectSecretsShieldOff, setRelatedFolders } from './projects.js';
+import { addProject, addRemoteProject, createChatgptProjectFor, linkChatgptProject, unlinkChatgptProject, expireArmedProjectCreates, getSessionProject, listProjects, localProjectPath, moveChatWithGroup, onProjectLinkChange, projectWorkspace, relatedFolderViews, removeProject, retryProjectCreate, setProjectColor, setProjectSecretsShieldOff, setRelatedFolders, syncChatgptProjects } from './projects.js';
 import { createProjectEntry, listProjectDirectory, previewProjectFile, projectFileTarget, renameProjectEntry, revalidateProjectFileTarget, saveProjectTextFile, serverFileSnapshot } from './project-files.js';
 import { ProjectFileWatchSet } from './project-file-watcher.js';
 import { ProjectGitWatchSet, readProjectGitDiff, readProjectGitSnapshot } from './project-git.js';
@@ -1416,6 +1417,44 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     // Its native ChatGPT Project is created by the browser; tell it there is work.
     if (project.chatgpt?.state === 'requested') wakeBrowserWork();
     return project;
+  });
+  // GitHub is a Git repository, not an SSH server folder. Clone under a directory explicitly
+  // chosen by the person and register the cloned workspace without creating a ChatGPT Project.
+  handle('projects:github-clone', async payload => {
+    const { url } = z.object({ url: z.string().min(1).max(300) }).strict().parse(payload);
+    const window = getWindow();
+    if (!window) throw new Error('No window');
+    const result = await dialog.showOpenDialog(window, { ...dialogLabel('Choose a project folder for ChatGPT'), properties: ['openDirectory'] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const folder = result.filePaths[0];
+    try { await resolvePath(getConfig().roots, folder); }
+    catch (error) {
+      if (!(error instanceof SandboxError)) throw error;
+      push('state:changed', await approveRoot(folder));
+    }
+    const project = await cloneGitHubProject(folder, url);
+    push('session:changed');
+    return project;
+  });
+  // Sync selected native ChatGPT Projects, or every listed Project. The browser extension already
+  // reports the current workspace catalog; only their ids/names are imported, never chat contents.
+  handle('projects:chatgpt-sync', async payload => {
+    const { ids } = z.object({ ids: z.array(z.string().regex(CHATGPT_PROJECT_ID)).max(200).optional() }).strict().parse(payload ?? {});
+    if (ids?.length === 0) throw new Error('Select at least one ChatGPT Project');
+    if (!(await chatgptProjectChoices()).length) throw new Error('No ChatGPT Projects found. Open chatgpt.com and refresh its Projects sidebar.');
+    const window = getWindow();
+    if (!window) throw new Error('No window');
+    const result = await dialog.showOpenDialog(window, { ...dialogLabel('Choose a project folder for ChatGPT'), properties: ['openDirectory'] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const folder = result.filePaths[0];
+    try { await resolvePath(getConfig().roots, folder); }
+    catch (error) {
+      if (!(error instanceof SandboxError)) throw error;
+      push('state:changed', await approveRoot(folder));
+    }
+    const synced = await syncChatgptProjects(folder, ids);
+    if (synced.created.length || synced.updated.length) push('session:changed');
+    return synced;
   });
   // A folder on a server (#1469): the address and folder as typed; the server is asked once.
   handle('projects:addRemote', async payload => {

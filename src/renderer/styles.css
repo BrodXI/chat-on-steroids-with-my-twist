@@ -171,6 +171,13 @@
 .plugin-dialog-head .btn { color: var(--soft); }
 .plugin-dialog-body { padding: 24px; font-size: calc(13px * var(--text-scale, 1)); line-height: 1.6; }
 .plugin-dialog-body > p:first-child { margin-top: 0; }
+.chatgpt-sync-list { max-height: min(44dvh, 370px); overflow: auto; border: 1px solid var(--edge); border-radius: 9px; margin: 14px 0; }
+.chatgpt-sync-choice { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 11px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.chatgpt-sync-choice:last-child { border-bottom: 0; }
+.chatgpt-sync-choice input { flex: none; accent-color: #2673d8; }
+.chatgpt-sync-choice span { min-width: 0; overflow-wrap: anywhere; }
+.chatgpt-sync-choice small { display: block; font-size: calc(11px * var(--text-scale, 1)); color: var(--soft); }
+.chatgpt-sync-empty { padding: 18px 12px; margin: 0; color: var(--soft); }
 .plugin-detail-hero, .plugin-card-head { display: flex; align-items: center; gap: 17px; margin-bottom: 20px; }
 .plugin-detail-hero .plugin-icon { width: 60px; height: 60px; border-radius: 16px; }
 .plugin-detail-hero p, .plugin-card-head p { margin: 0; color: var(--soft); line-height: 1.6; }

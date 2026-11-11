@@ -13,8 +13,8 @@ import { workspaceForChat } from './workspace.js';
 import { chatGroupsState, movedChatGroup, placeMovedChat } from './chat-groups.js';
 import type { ChatGroupsState } from '../shared/chat-groups.js';
 import { logInfo } from './logger.js';
-import { isListedChatgptProject } from './chatgpt-project-catalog.js';
-import { CHATGPT_PROJECT_ID, MAX_RELATED_FOLDERS, PROJECT_COLORS, type ChatgptProjectLink, type LocalProject, type ProjectColor, type RelatedFolderView } from '../shared/projects.js';
+import { chatgptProjectChoices, isListedChatgptProject } from './chatgpt-project-catalog.js';
+import { CHATGPT_PROJECT_ID, MAX_RELATED_FOLDERS, PROJECT_COLORS, type ChatgptProjectLink, type ChatgptProjectSyncResult, type LocalProject, type ProjectColor, type RelatedFolderView } from '../shared/projects.js';
 
 const at = z.number().finite().nonnegative();
 const requestId = z.string().uuid();
@@ -28,6 +28,7 @@ const chatgptSchema = z.discriminatedUnion('state', [
 ]);
 const projectSchema = z.object({
   id: z.string().uuid(), name: z.string().min(1).max(160), path: z.string().min(1).max(32768),
+  github: z.string().url().max(300).optional(), syncedFromChatgpt: z.literal(true).optional(),
   color: z.enum(PROJECT_COLORS).optional(),
   createdAt: z.number().finite().nonnegative(), ungrouped: z.boolean().optional(), secretsShieldOff: z.boolean().optional(),
   chatgpt: chatgptSchema.optional(),
@@ -54,7 +55,7 @@ export async function getProject(id: string): Promise<LocalProject | null> {
  * `chatgpt: 'later'` leaves the native ChatGPT Project undecided while the person chooses between
  * a new one and one they already have (#1756); `createChatgptProjectFor` or `linkChatgptProject` follows.
  */
-export function addProject(folderPath: string, options: { chatgpt?: 'later' } = {}): Promise<LocalProject> {
+export function addProject(folderPath: string, options: { chatgpt?: 'later'; github?: string } = {}): Promise<LocalProject> {
   const operation = mutations.then(async () => {
     if (!path.isAbsolute(folderPath)) throw new Error('Choose an absolute local project folder');
     const resolved = await resolvePath(getConfig().roots, folderPath);
@@ -71,6 +72,7 @@ export function addProject(folderPath: string, options: { chatgpt?: 'later' } = 
     // Only a project created here gets a native ChatGPT Project; an existing or restored one
     // above keeps exactly what it had.
     const project: LocalProject = { id: randomUUID(), name: (path.basename(resolved.real) || resolved.real).slice(0, 160), path: resolved.real, createdAt: Date.now(),
+      ...(options.github ? { github: options.github } : {}),
       ...(options.chatgpt === 'later' ? {} : { chatgpt: { state: 'requested', requestId: randomUUID(), updatedAt: Date.now() } as const }) };
     await writeDurableNow('projects', [...projects, project]);
     logInfo(`projects: project ${project.id} asks for a new ChatGPT Project`);
@@ -141,6 +143,79 @@ export function setProjectColor(projectId: string, color: ProjectColor | null): 
     const updated: LocalProject = normalized ? { ...withoutColor, color: normalized } : withoutColor;
     await writeDurableNow('projects', projects.map(row => row.id === projectId ? updated : row));
     return updated;
+  });
+  mutations = operation.catch(() => undefined);
+  return operation;
+}
+
+/** A stable, cross-platform folder name. The ChatGPT id suffix prevents same-name collisions. */
+function chatgptFolderName(name: string, id: string): string {
+  const base = name.replace(/[<>:"/\\|?*\u0000-\u001f\u007f]/g, '-').replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '').trim().slice(0, 64).replace(/[. ]+$/g, '');
+  const safe = base && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(base) ? base : 'ChatGPT Project';
+  return `${safe}-${id.slice(-8)}`;
+}
+
+/**
+ * Import only selected Projects (or every currently listed Project) from the current ChatGPT
+ * workspace. Each gets an explicit local folder under a person-approved destination. This never
+ * reads or copies ChatGPT conversations, instructions, uploads or other remote content.
+ *
+ * The shared project mutation queue makes concurrent imports idempotent and keeps one-to-one ids.
+ * A repeated sync updates only the names of workspaces originally imported through this action.
+ */
+export function syncChatgptProjects(parentFolder: string, selectedIds?: string[]): Promise<ChatgptProjectSyncResult> {
+  const operation = mutations.then(async () => {
+    const choices = await chatgptProjectChoices();
+    const byId = new Map(choices.map(choice => [choice.id, choice]));
+    if (selectedIds && (selectedIds.length > 200 || selectedIds.some(id => !CHATGPT_PROJECT_ID.test(id) || !byId.has(id)))) {
+      throw new Error('Refresh ChatGPT Projects and choose only Projects listed in the current workspace');
+    }
+    const chosen = selectedIds ? [...new Set(selectedIds)].map(id => byId.get(id)!) : choices;
+    if (!chosen.length) return { created: [], updated: [], skipped: 0 };
+    const destination = await resolvePath(getConfig().roots, parentFolder);
+    if (!(await fs.stat(destination.real)).isDirectory()) throw new Error('Choose a destination folder');
+    const current = await listProjects();
+    const newCount = chosen.filter(choice => !current.some(row => row.chatgpt?.state === 'linked' && row.chatgpt.id === choice.id)).length;
+    if (current.length + newCount > 200) throw new Error('Project catalog limit reached');
+
+    const next = [...current];
+    const created: LocalProject[] = [];
+    const updated: LocalProject[] = [];
+    let skipped = 0;
+    const foldersCreated: string[] = [];
+    try {
+      for (const choice of chosen) {
+        const index = next.findIndex(row => row.chatgpt?.state === 'linked' && row.chatgpt.id === choice.id);
+        if (index >= 0) {
+          const old = next[index]!;
+          if (!old.ungrouped && old.syncedFromChatgpt && old.name !== choice.name) {
+            const renamed = { ...old, name: choice.name };
+            next[index] = renamed;
+            updated.push(renamed);
+          } else skipped++;
+          continue;
+        }
+        const folder = path.join(destination.real, chatgptFolderName(choice.name, choice.id));
+        // mkdir without recursive refuses any pre-existing folder or symlink, and never overwrites
+        // a workspace the person or another process already owns.
+        await fs.mkdir(folder);
+        foldersCreated.push(folder);
+        const project: LocalProject = {
+          id: randomUUID(), name: choice.name, path: folder, createdAt: Date.now(),
+          syncedFromChatgpt: true, chatgpt: { state: 'linked', id: choice.id, updatedAt: Date.now() }
+        };
+        next.push(project);
+        created.push(project);
+      }
+      if (created.length || updated.length) await writeDurableNow('projects', next);
+    } catch (error) {
+      // Only remove newly created and still-empty directories. Never delete existing/user files.
+      for (const folder of foldersCreated.reverse()) await fs.rmdir(folder).catch(() => undefined);
+      throw error;
+    }
+    logInfo(`projects: ChatGPT sync created ${created.length}, updated ${updated.length}, skipped ${skipped}`);
+    return { created, updated, skipped };
   });
   mutations = operation.catch(() => undefined);
   return operation;
