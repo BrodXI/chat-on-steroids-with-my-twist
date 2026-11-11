@@ -94,6 +94,8 @@ var CLF_DOM = (() => {
     for (const injected of clone.querySelectorAll(NOT_PROMPT)) injected.remove();
     return clone.textContent ?? '';
   };
+  /** ChatGPT can leave invisible caret sentinels in a visually empty rich editor. */
+  const editorBlank = node => editorText(node).replace(/[\u200b-\u200d\u2060\ufeff]/g, '').trim() === '';
   /**
    * The editor's text with its line breaks (#2074): each paragraph its own line, and a <br> a line
    * break, which textContent drops. Only for comparisons that must see lines; composerText stays as is.
@@ -1967,7 +1969,7 @@ var CLF_DOM = (() => {
       const box = composer();
       if (!composerWritable()) return false;
       if (generating() || stopButton()) return false;
-      if (editorText(box).trim() !== '') return false;
+      if (!editorBlank(box)) return false;
       return true;
     }, false);
   }
@@ -2539,7 +2541,9 @@ var CLF_DOM = (() => {
       // that way on 2026-09-26, blocked by its own 352 characters. Compared with the same whitespace
       // normalisation the send receipt uses, so both agree on "the same message".
       const sameAsValue = String(existing).replace(/\s+/g, '') === String(value || '').replace(/\s+/g, '');
-      if (existing !== '' && mode === false && !sameAsValue) return reject('existing_draft');
+      // An invisible caret sentinel is not a user draft. Selecting the editor's children
+      // removes it along with the blank native paragraph; meaningful text stays protected.
+      if (existing !== '' && mode === false && !sameAsValue && !editorBlank(box)) return reject('existing_draft');
       box.focus();
       const selection = document.getSelection();
       if (!selection) return reject('selection_missing');
@@ -3986,6 +3990,7 @@ var CLF_DOM = (() => {
     composerAuthoredText,
     /** The composer's prompt text, without nodes ChatGPT injects for presentation (#1792). */
     composerText: (box = composer()) => editorText(box),
+    composerBlank: (box = composer()) => editorBlank(box),
     composerLines: (box = composer()) => editorLines(box),
     pageChecks,
     userPromptText,

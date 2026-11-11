@@ -118,6 +118,8 @@ const entrySchema = inputArgs.extend({
   recovery: z.object({ questionId: z.string(), episode: z.string().max(200).optional(), pro: z.boolean(), busyUntil: z.number(), phase: z.enum(['ready', 'stopping', 'reloading', 'resumed']), reloadOwner: z.string().optional(),
     /** First release of an unbroken run of pages withdrawing this Continue before Send (#820). */
     withdrawnSince: z.number().optional(),
+    /** Completed bounded pre-Send retry bursts. Never confers Send authorization. */
+    withdrawalCycles: z.number().int().nonnegative().max(32).optional().catch(32),
     /** A page refused this Continue before claiming it, so it ended unsent; see endRecoveryInput. */
     ended: z.literal('page-final').optional() }).optional(),
   /** Exact tool-free turn this explicit browser correction may interrupt. */
@@ -2884,13 +2886,16 @@ export function authorizeBrowserHelperRetry(id: string, sourceSessionId: string)
  * page reports that its receipt was never confirmed: that retires it as an uncertain send.
  */
 /**
- * How long pages may keep withdrawing one automatic Continue before Send. Measured in #820: a page
- * that refuses for a reason it cannot get past released the same ticket about once a second for
- * many minutes, its text left in the composer. Past this, the Continue ends and the log says why.
+ * A three-minute burst of pre-Send withdrawals pauses rather than permanently failing the
+ * recovery. ChatGPT can remount a composer or leave Send disabled for longer than three minutes.
+ * Retry with an increasing cooldown; the existing twelve-hour source boundary still applies.
  */
 export const RECOVERY_WITHDRAW_LIMIT_MS = 3 * 60_000;
-/** What the chat shows for a Continue that found no safe moment; the exact reason is in the log. */
-export const RECOVERY_WITHDRAWN_ERROR = 'Automatic Continue found no safe moment to send for 3 minutes. Send Continue yourself to go on.';
+export const RECOVERY_WITHDRAW_COOLDOWN_MS = 2 * 60_000;
+const RECOVERY_WITHDRAW_MAX_COOLDOWN_MS = 30 * 60_000;
+const RECOVERY_LIFETIME_MS = 12 * 60 * 60_000;
+/** What the chat shows only when the overall recovery window has expired. */
+export const RECOVERY_WITHDRAWN_ERROR = 'Automatic Continue could not be sent within its 12-hour recovery window. Send Continue yourself to go on.';
 
 /**
  * Ends an automatic Continue that a page refuses before ever claiming it, because ChatGPT shows
@@ -3029,11 +3034,24 @@ export function failBrowserInput(id: string, owner: string, error: string, detai
       }
       const now = Date.now();
       const since = entry.recovery.withdrawnSince ?? now;
-      if (now - since >= RECOVERY_WITHDRAW_LIMIT_MS) {
+      if (now - entry.createdAt >= RECOVERY_LIFETIME_MS) {
         logWarn(`input ${entry.id}: automatic Continue ended — pages withdrew it before Send for ` +
           `${Math.round((now - since) / 60_000)} minutes (last: ${told.slice(0, 160)})`);
         await commit(current.map(row => row === entry
           ? { ...row, state: 'failed', owner: null, error: RECOVERY_WITHDRAWN_ERROR } : row));
+        return true;
+      }
+      if (now - since >= RECOVERY_WITHDRAW_LIMIT_MS) {
+        const cycles = Math.min(32, (entry.recovery.withdrawalCycles ?? 0) + 1);
+        const cooldown = Math.min(RECOVERY_WITHDRAW_COOLDOWN_MS * 2 ** Math.min(cycles - 1, 4),
+          RECOVERY_WITHDRAW_MAX_COOLDOWN_MS);
+        const until = Math.min(entry.createdAt + RECOVERY_LIFETIME_MS, now + cooldown);
+        logWarn(`input ${entry.id}: automatic Continue paused until ${new Date(until).toISOString()} after ` +
+          `${Math.round((now - since) / 60_000)} minutes of pre-Send withdrawals (last: ${told.slice(0, 160)})`);
+        await commit(current.map(row => row === entry
+          ? { ...releaseRecoveryClaim(row, error), dueAt: until,
+              recovery: { ...row.recovery!, phase: row.recovery!.phase === 'ready' ? 'ready' : 'resumed',
+                withdrawnSince: undefined, withdrawalCycles: cycles } } : row));
         return true;
       }
       await commit(current.map(row => row === entry

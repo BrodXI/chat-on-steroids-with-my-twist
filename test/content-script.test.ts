@@ -1438,6 +1438,26 @@ describe('desktop input delivery and helper ownership', () => {
       expect(live.document.querySelector('#prompt-textarea')!.textContent).toBe('A sentence I was still writing');
     }
   });
+  it('sends an automatic Continue when the editor contains only invisible formatting sentinels', async () => {
+    live = await harness(`https://chatgpt.com/c/${chatA}`, {
+      desktop_input: message => ({ ok: true, data: message.authorize || message.ack || message.fail || message.response
+        ? { ok: true } : { input: claimed({ purpose: 'rotation' }) } })
+    }, () => undefined, false, true);
+    // Visually empty native rich-text editors can retain a zero-width caret sentinel.
+    // It is neither user-authored text nor an attachment, and cannot strand Continue.
+    live.document.querySelector('#prompt-textarea')!.textContent = '\u200b';
+    await settle();
+    const sends = watchSend(live.document);
+    live.document.querySelector('[data-testid="send-button"]')!.addEventListener('click', () => {
+      userTurn(live!.document, 'invisible-caret-question', text, { sent: false });
+      live!.document.querySelector('#prompt-textarea')!.textContent = '';
+    });
+    const result = await live.runtimeMessage({ type: 'clf-desktop-input', id: inputId, conversationId: chatA });
+    await settle();
+    expect(result).toEqual({ ok: true });
+    expect(sends()).toBe(1);
+    expect(live.sent.filter(message => message.fail)).toEqual([]);
+  });
 
   /**
    * #1922: a fresh-turn rotation inserted its generic Continue, the composer changed before Send, and the

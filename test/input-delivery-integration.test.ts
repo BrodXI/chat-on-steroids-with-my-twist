@@ -341,7 +341,7 @@ it('counts only messages a browser is sending, not one handed to a tool caller (
     .filter(state => inBrowserDelivery({ state } as never))).toEqual(['browser', 'decision']);
 });
 
-it('says why a page withdrew a Continue and ends it after three minutes of withdrawals (#820)', async () => {
+it('explains withdrawn Continue and retries safely after a three-minute cooldown burst (#820)', async () => {
   // Measured in #820: a page released the same automatic Continue about once a second for many
   // minutes, its text left in the composer, and the log never said why after the first time.
   let now = Date.now(); const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
@@ -388,14 +388,32 @@ it('says why a page withdrew a Continue and ends it after three minutes of withd
       expect((await input.listInputs()).find(item => item.id === row.id)).toMatchObject({ state: 'queued',
         recovery: { withdrawnSince: firstRelease } });
     }
-    // Past three minutes of nothing but withdrawals the Continue ends, and the log says why.
+    // A temporary three-minute pre-Send stall should pause, not permanently consume the
+    // recovery ticket. Its source is revalidated before every subsequent authorization.
     now = firstRelease + input.RECOVERY_WITHDRAW_LIMIT_MS;
     expect(await input.claimBrowserInput(row.id, 'a-document', conversationId, true)).not.toBeNull();
     expect(await input.failBrowserInput(row.id, 'a-document', withdrawn, 'page-unreadable')).toBe(true);
-    // The chat shows one translated sentence that says what to do; the code stays in the log (#1586).
-    expect((await input.listInputs()).find(item => item.id === row.id)).toMatchObject({ state: 'failed',
-      error: input.RECOVERY_WITHDRAWN_ERROR });
-    expect(getLog().some(entry => entry.message.includes('automatic Continue ended') && entry.message.includes('page-unreadable'))).toBe(true);
+    const paused = (await input.listInputs()).find(item => item.id === row.id)!;
+    expect(paused).toMatchObject({ state: 'queued', owner: null, dueAt: now + input.RECOVERY_WITHDRAW_COOLDOWN_MS,
+      recovery: { withdrawalCycles: 1 } });
+    expect(getLog().some(entry => entry.message.includes('automatic Continue paused') && entry.message.includes('page-unreadable'))).toBe(true);
+    // A restarted app reloads the very same durable cooldown, not a fresh immediate attempt.
+    input.resetInputForTests();
+    expect(await input.claimBrowserInput(row.id, 'a-document', conversationId, true)).toBeNull();
+    now = paused.dueAt;
+    expect(await input.claimBrowserInput(row.id, 'a-document', conversationId, true)).not.toBeNull();
+    expect(await input.failBrowserInput(row.id, 'a-document', withdrawn, 'send-not-ready')).toBe(true);
+    now += input.RECOVERY_WITHDRAW_LIMIT_MS;
+    expect(await input.claimBrowserInput(row.id, 'a-document', conversationId, true)).not.toBeNull();
+    expect(await input.failBrowserInput(row.id, 'a-document', withdrawn, 'send-not-ready')).toBe(true);
+    const secondPause = (await input.listInputs()).find(item => item.id === row.id)!;
+    expect(secondPause).toMatchObject({ state: 'queued', owner: null,
+      dueAt: now + input.RECOVERY_WITHDRAW_COOLDOWN_MS * 2, recovery: { withdrawalCycles: 2 } });
+    now = secondPause.dueAt;
+    expect(await input.claimBrowserInput(row.id, 'a-document', conversationId, true)).not.toBeNull();
+    expect(await input.authorizeBrowserInput(row.id, 'a-document', conversationId)).toBe(true);
+    expect(await input.acknowledgeBrowserInput(row.id, 'a-document', conversationId, 'after-pause-send')).toBe(true);
+    expect((await input.listInputs()).find(item => item.id === row.id)).toMatchObject({ state: 'sent', messageId: 'after-pause-send' });
     input.resetInputForTests();
     expect((await input.pendingBrowserInputs()).filter(item => item.id === row.id)).toEqual([]);
   } finally { clock.mockRestore(); }

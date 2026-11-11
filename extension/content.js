@@ -13504,7 +13504,7 @@
     // only when it is exactly the instruction, and refuses visibly when the person edited it (#134).
     // Holding here instead left the chat's handoff waiting with nothing on screen (2026-10-10).
     const draft = () => !handoffMarked(CLF_DOM.composer()) &&
-      Boolean((CLF_DOM.composerText() || '').trim() || CLF_DOM.hasComposerAttachments());
+      Boolean(!CLF_DOM.composerBlank() || CLF_DOM.hasComposerAttachments());
     const cleared = current() && clearOwnSentResidue(message.ownSent);
     const verdict = (holds, extra) => {
       const why = holds.find(([held]) => held)?.[1];
@@ -13784,7 +13784,7 @@
         let input = null;
         try {
           const safe = () => onTarget() && !stopRequestedAt && pendingTools === 0 &&
-            CLF_DOM.composerVisible() && !(CLF_DOM.composerText() || '').trim() &&
+            CLF_DOM.composerVisible() && CLF_DOM.composerBlank() &&
             !CLF_DOM.hasComposerAttachments() && !CLF_DOM.errors().some(error => error.blocking === true);
           if (!safe()) return false;
           // Flush newly visible native progress before requesting destructive
@@ -13948,7 +13948,7 @@
         return ownUnsent.includes(sendText(shown)) || ownUnsent.includes(sendText(unescapeMarkdown(shown)));
       };
       const leftover = !ownResidue && ownLeftover();
-      if ((!ownsFreshPage() && CLF_DOM.composerText(composer).trim() && !ownResidue && !leftover) || CLF_DOM.hasComposerAttachments()) return fail(t(
+      if ((!ownsFreshPage() && !CLF_DOM.composerBlank(composer) && !ownResidue && !leftover) || CLF_DOM.hasComposerAttachments()) return fail(t(
         'content_delivery_existing_draft',
         'ChatGPT already contains an unsent draft. Send or clear that draft in Chrome before trying again.'
       ));
@@ -14003,7 +14003,7 @@
       // behind is not a composer that "changed". Re-read rather than reusing `ownResidue`, because
       // model selection and the writability wait sit between the two and can replace the editor.
       if (!onTarget() || (CLF_DOM.generating() && !message.directTurn) ||
-          (!ownsFreshPage() && (CLF_DOM.composerText() || '').trim() &&
+          (!ownsFreshPage() && !CLF_DOM.composerBlank() &&
             sendText(CLF_DOM.composerText()) !== sendText(input.text) && !ownLeftover()) ||
           CLF_DOM.hasComposerAttachments()) return fail(t(
         'content_delivery_composer_changed',
