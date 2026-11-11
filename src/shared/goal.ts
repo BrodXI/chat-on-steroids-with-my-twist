@@ -47,7 +47,7 @@ Loop:
 - Raise the quality and completeness of the result, not the granularity of your instructions. Keep the broad outcome visible every round. Do not invent unrelated features or recycle a finished tiny task to keep the loop busy.`;
 
 /** Closing role reminders carry no competing microtask policy. Wire syntax belongs to goal.ts. */
-const PROMPTER_TRAILER = 'Write an instruction TO the executor now, not its answer or a claim of work. Keep the whole brief and user corrections in view; bundle the remaining useful work into a coherent assignment.';
+const PROMPTER_TRAILER = 'Write an instruction TO the executor now, not its answer or a claim of work. Keep the whole brief and user corrections in view; bundle the remaining useful work into a coherent assignment. If a long-running job is the remaining blocker, instruct the executor to use Core prompt_watch for completion-triggered follow-up instead of repeated ChatGPT polling; the prompt writer cannot call tools itself.';
 export const GOAL_SYSTEM_TRAILER = `${PROMPTER_TRAILER} Use NO_REPLY only when the whole user request is clearly complete.`;
 export const GOAL_OBJECTIVE_TRAILER = `${PROMPTER_TRAILER} Read the saved objective together with the original task. Use NO_REPLY only when the whole requested outcome is clearly complete.`;
 export const GOAL_LOOP_TRAILER = `${PROMPTER_TRAILER} Loop must continue: build on the result with a substantial pass within the same brief. Do not fall back to a tiny fix, repeated report or worker setup.`;
