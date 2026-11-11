@@ -186,6 +186,28 @@ async function seed(rows: object[]): Promise<void> {
 
 const wake = () => vi.mocked(startup.wakeBrowserUrl);
 
+it('authenticates generic completion callbacks, keeps them in their owning chat, and deduplicates repeats', async () => {
+  const watches = await import('../src/main/prompt-watches.js');
+  const watch = await watches.createPromptWatch(chatSession, { kind: 'signal',
+    label: 'external integration', prompt: 'Read the final job report' });
+  const path = `/v1/watches/${watch.id}/complete`;
+  const body = { sessionId: chatSession, result: 'success' };
+  expect((await call('POST', path, { body: JSON.stringify(body), auth: false })).status).toBe(401);
+  gate.actions = false;
+  expect((await post(path, body)).status).toBe(403);
+  gate.actions = true;
+  expect((await post(path, { ...body, extra: 'untrusted field' })).status).toBe(400);
+  expect((await post(path, { ...body, sessionId: 'other-session-id' })).status).toBe(404);
+  const first = await post(path, body);
+  expect(first).toMatchObject({ status: 202, body: { watchId: watch.id, queued: true, replayed: false } });
+  const second = await post(path, { ...body, result: 'failure' });
+  expect(second).toMatchObject({ status: 200, body: { watchId: watch.id, queued: false, replayed: true } });
+  expect((await watches.listPromptWatches(chatSession)).find(row => row.id === watch.id)).toMatchObject({
+    pendingDueAt: expect.any(Number), outcome: 'success'
+  });
+  await watches.cancelPromptWatch(chatSession, watch.id);
+});
+
 beforeAll(async () => {
   dir = await makeTempDir('clf-control-actions-');
   initConfigPath(dir);
@@ -255,7 +277,7 @@ describe('with actions switched off', () => {
     expect(refused.status).toBe(403);
     expect(refused.continued).toBe(false);
     expect((await call('GET', '/v1/inputs')).status).toBe(200);
-    expect((await call('GET', '/v1/health')).body.actions).toEqual({ enabled: false, routes: ['POST /v1/inputs', 'POST /v1/inputs/{id}/cancel', 'POST /v1/workers/{ownerId}/spawn', 'POST /v1/workers/{ownerId}/message', 'POST /v1/workers/{ownerId}/ack', 'POST /v1/sessions/{id}/stop'] });
+    expect((await call('GET', '/v1/health')).body.actions).toEqual({ enabled: false, routes: ['POST /v1/inputs', 'POST /v1/inputs/{id}/cancel', 'POST /v1/workers/{ownerId}/spawn', 'POST /v1/workers/{ownerId}/message', 'POST /v1/workers/{ownerId}/ack', 'POST /v1/sessions/{id}/stop', 'POST /v1/watches/{id}/complete'] });
   });
 
   it('follows the switch on the next request without restarting the listener', async () => {

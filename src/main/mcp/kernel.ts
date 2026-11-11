@@ -802,7 +802,7 @@ async function dispatchTracked(
   // A step for the person (#1695) is shown in its own chat and refused without it, so it waits for
   // the page's proof like session_finish: ChatGPT can hand one before that proof arrives (VM, 2026-11-07).
   const stepForPerson = name === 'ask_user_to_run' || name === 'user_request_status';
-  const needsExactIdentity = name === 'session_finish' || stepForPerson || desktopContext || (!allowUnattributed && (
+  const needsExactIdentity = name === 'session_finish' || name === 'prompt_watch' || stepForPerson || desktopContext || (!allowUnattributed && (
     name === 'exec' || name === 'update_plan' || (identitySensitive && swarmRunning())
   ));
   if (!context.caller.conversationId && needsExactIdentity && requestId) {

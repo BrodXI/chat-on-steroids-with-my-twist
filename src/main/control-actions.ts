@@ -15,6 +15,7 @@ import type { InputArgs, InputEntry } from './session/input.js';
 import { getProject } from './projects.js';
 import { readSession } from './session/read-model.js';
 import { cancelDesktopInput, sendDesktopInput } from './session/start-input.js';
+import { completePromptWatch } from './prompt-watches.js';
 
 /**
  * The action routes of the local control API: send a message to an existing chat or start a new
@@ -70,11 +71,16 @@ const stopBody = z.object({ turnId: z.string().min(1).max(256) }).strict();
 
 const CANCEL_ROUTE = /^\/v1\/inputs\/([0-9a-f-]{36})\/cancel$/;
 const STOP_ROUTE = /^\/v1\/sessions\/([0-9a-z-]{8,64})\/stop$/;
+const COMPLETE_WATCH_ROUTE = /^\/v1\/watches\/([0-9a-f-]{36})\/complete$/;
+const completeWatchBody = z.object({
+  sessionId: z.string().regex(/^[0-9a-z-]{8,64}$/),
+  result: z.enum(['success', 'failure', 'cancelled', 'unknown'])
+}).strict();
 
 /** Every path an action can arrive on, whatever the id, so one gate can refuse them all alike. */
 export function isActionPath(route: string): boolean {
   return route === '/v1/inputs' || /^\/v1\/inputs\/[^/]+\/cancel$/.test(route) || /^\/v1\/workers\/[^/]+\/(spawn|message|ack)$/.test(route) ||
-    /^\/v1\/sessions\/[^/]+\/stop$/.test(route);
+    /^\/v1\/sessions\/[^/]+\/stop$/.test(route) || /^\/v1\/watches\/[^/]+\/complete$/.test(route);
 }
 
 export interface ActionReply {
@@ -269,6 +275,15 @@ export async function serveAction(method: string, route: string, body: unknown):
   });
   if (worker) return worker;
   if (route === '/v1/inputs') return send(body);
+  const watchMatch = COMPLETE_WATCH_ROUTE.exec(route);
+  if (watchMatch) {
+    const input = parse(completeWatchBody, body);
+    if (!actionsAllowed()) throw new RequestError(403, 'actions_disabled');
+    const status = await completePromptWatch(input.sessionId, watchMatch[1]!, input.result);
+    if (status === 'not_found') throw new RequestError(404, 'watch_not_found');
+    return { status: status === 'queued' ? 202 : 200,
+      body: { watchId: watchMatch[1], queued: status === 'queued', replayed: status === 'already_completed' } };
+  }
   const match = CANCEL_ROUTE.exec(route);
   if (match) return cancel(match[1]!, body);
   const stopMatch = STOP_ROUTE.exec(route);

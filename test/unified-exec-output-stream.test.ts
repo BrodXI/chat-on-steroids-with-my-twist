@@ -53,6 +53,29 @@ it('drains each PTY chunk once without suppressing a newly emitted screen repain
   expect(retained.rawOutput.toString()).toBe('first=received\r\n' + repaint);
 });
 
+it('publishes exactly one exit event for a process generation without consuming its output', async () => {
+  const events: Array<{ processId: number; incarnation: number; exitCode: number | null }> = [];
+  const unsubscribe = manager.onProcessExit(event => events.push(event));
+  const processId = manager.allocateProcessId();
+  const started = await manager.execCommand({
+    command: ['fixture-pty'], shellType: 'bash', hookCommand: 'test exit watch',
+    processId, yieldTimeMs: 1, maxOutputTokens: undefined, truncationPolicy,
+    cwd: process.cwd(), displayCwd: '/fixture', env: {}, tty: true
+  });
+  expect(started.processId).toBe(processId);
+  const incarnation = manager.listProcesses()[0]!.incarnation;
+  expect(manager.inspectProcess(processId, incarnation)).toEqual({ state: 'running' });
+  expect(manager.inspectProcess(processId, incarnation + 1)).toEqual({ state: 'lost' });
+  pty.data!('ci result\n');
+  pty.exit!({ exitCode: 6 });
+  await vi.waitFor(() => expect(events).toEqual([{ processId, incarnation, exitCode: 6 }]));
+  expect(manager.inspectProcess(processId, incarnation)).toEqual({ state: 'completed', exitCode: 6 });
+  const retained = await manager.writeStdin({ processId, input: '', yieldTimeMs: 1,
+    maxOutputTokens: undefined, truncationPolicy });
+  expect(retained.rawOutput.toString()).toContain('ci result');
+  unsubscribe();
+});
+
 it('lets the person watch a running command without taking anything from the agent\'s own reads (#1920)', async () => {
   const processId = manager.allocateProcessId();
   const started = await manager.execCommand({

@@ -49,6 +49,7 @@ import { onSessionAutomationChange, sessionActivityExpiresAt, sessionControlsFor
 import { setStuckNotifier } from './stuck-notice.js';
 import { flushSessions, getSession, getSessionOrNullIfMissing, initSessionStore, listSessions, readRecentEvents, setRecordingStorageLimit } from './session/store.js';
 import { runDueSchedules, safeFailureReason, type RunnerDeps } from './scheduled-runs.js';
+import { completeExecProcessWatches, inspectGithubRun, runDuePromptWatches, setPromptWatchWake, type WatchDeps } from './prompt-watches.js';
 import { deliveryProof, enqueueInput, listInputs } from './session/input.js';
 import { createTurnNotifier } from './turn-notifications.js';
 import { DEFAULT_RECORDING_STORAGE_GIB } from '../shared/session.js';
@@ -668,6 +669,20 @@ void app.whenReady().then(async () => {
   setInterval(checkSchedules, 30_000).unref();
   powerMonitor.on('resume', checkSchedules);
   checkSchedules();
+  // Agent-created watches use exactly the same browser-only outbox and Send guards as
+  // Scheduled Messages. A GitHub watch checks the run quietly; only completion wakes GPT.
+  const watchDeps: WatchDeps = { ...scheduleDeps, inspectGithub: inspectGithubRun,
+    inspectExecProcess: (id, incarnation) => unifiedExecManager.inspectProcess(id, incarnation) };
+  const checkWatches = () => void runDuePromptWatches(Date.now(), watchDeps)
+    .catch(error => logWarn(`prompt watches: check failed (${safeFailureReason(error)})`));
+  setPromptWatchWake(checkWatches);
+  unifiedExecManager.onProcessExit(event => {
+    void completeExecProcessWatches(event.processId, event.incarnation, event.exitCode)
+      .catch(error => logWarn(`prompt watches: exit observation failed (${safeFailureReason(error)})`));
+  });
+  setInterval(checkWatches, 30_000).unref();
+  powerMonitor.on('resume', checkWatches);
+  checkWatches();
   // The app's own requests follow the system proxy too, not only the tunnel (#1255).
   configureAppProxy(url => session.defaultSession.resolveProxy(url), () => [
     ...(getConfig().goal.provider.kind === 'custom' ? [getConfig().goal.provider.baseUrl] : []),

@@ -1,5 +1,6 @@
 import { toolDeclaration } from './tool-declarations.js';
 import { registerPlanTool } from './plan-tool.js';
+import { registerPromptWatchTool } from './prompt-watch-tool.js';
 import { registerUserRequestTools } from './user-request-tools.js';
 import { goalWorkerChat, imageExportCapable } from '../bridge.js';
 import { exportImage, ImageExportError } from '../image-export.js';
@@ -1209,6 +1210,7 @@ export function registerCoreTools(reg: SurfaceRegistrar): void {
 
   if (reg.sessionToolsExposed) {
     registerPlanTool(reg);
+    registerPromptWatchTool(reg);
   }
   if (reg.ctx.exposedFinishTool ?? getConfig().ui.finishTool === true) {
     reg.register('session_finish', toolDeclaration('session_finish', () => ({

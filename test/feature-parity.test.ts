@@ -75,6 +75,7 @@ describe('portable browser-backed feature parity', () => {
       'ask_user_to_run',
       'user_request_status',
       'update_plan',
+      'prompt_watch',
       'agents',
       'session_finish',
       'usage',

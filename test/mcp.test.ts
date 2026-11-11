@@ -904,7 +904,7 @@ describe('surface boundaries', () => {
     everything();
     const names = toolNames(await core('tools/list'));
     // find is absent because exec_command is present — they are mutually exclusive.
-    expect(names).toEqual(['agents', 'apply_patch', 'ask_user_to_run', 'exec', 'exec_command', 'read', 'save_image', 'update_plan', 'usage', 'user_request_status', 'view_image', 'write_stdin']);
+    expect(names).toEqual(['agents', 'apply_patch', 'ask_user_to_run', 'exec', 'exec_command', 'prompt_watch', 'read', 'save_image', 'update_plan', 'usage', 'user_request_status', 'view_image', 'write_stdin']);
     for (const name of surfaceDefinition('desktop').tools.filter(name => name !== 'exec')) expect(names, name).not.toContain(name);
   });
 
@@ -1248,7 +1248,7 @@ describe('surface boundaries', () => {
     const desktopTools = toolList(await desktop('tools/list'));
 
     // Each populated surface includes code mode; find and the shell exec pair remain exclusive.
-    expect(coreTools).toHaveLength(12);
+    expect(coreTools).toHaveLength(13);
     expect(desktopTools).toHaveLength(BROWSER_TOOLS.length + (IS_WINDOWS ? 16 : process.platform === 'darwin' ? 3 : 1));
 
     // And the size, which is what a discovery pull actually costs the model on every
@@ -1258,7 +1258,9 @@ describe('surface boundaries', () => {
     // catches the regression it exists to catch.
     const coreBytes = Buffer.byteLength(JSON.stringify(coreTools), 'utf8');
     const desktopBytes = Buffer.byteLength(JSON.stringify(desktopTools), 'utf8');
-    expect(coreBytes, `core tools/list is ${coreBytes} bytes`).toBeLessThan(20_500);
+    // The new completion watcher is one tool with multiple bounded modes. Account for
+    // its schema without relaxing the guard into an unmeasured round-number budget.
+    expect(coreBytes, `core tools/list is ${coreBytes} bytes`).toBeLessThan(23_000);
     expect(desktopBytes, `desktop tools/list is ${desktopBytes} bytes`).toBeLessThan(IS_WINDOWS ? 24_000 : 24_500);
 
     // Per tool as well as per surface, so one schema cannot quietly eat the whole budget
@@ -3810,6 +3812,53 @@ describe('agent-maintained plans over MCP', () => {
     const disabled = await core('tools/call', { name: 'update_plan', arguments: { plan: [] } });
     expect(failed(disabled)).toBe(true);
     expect(textOf(disabled)).toContain('Session recording');
+  });
+});
+
+describe('ChatGPT-created prompt watches over Core', () => {
+  const send = (requestId: string | null, arguments_: Record<string, unknown>) => modern('tools/call',
+    { name: 'prompt_watch', arguments: arguments_ }, requestId ? { 'x-request-id': `${requestId}/att1` } : {});
+
+  it('requires a proven exact chat and lets only its owner create, list and cancel a recurring prompt', async () => {
+    ctx.sessionTools = true;
+    ctx.readOnly = false;
+    const source = await createSession({ conversationId: 'prompt-watch-own-chat' });
+    const foreign = await createSession({ conversationId: 'prompt-watch-other-chat' });
+    // Unlike the full Electron app, this isolated MCP fixture does not normally
+    // initialize the durable scheduler ledger because no other tool needs it.
+    (await import('../src/main/durable.js')).initDurableStore(base);
+    const prove = (requestId: string, conversationId = 'prompt-watch-own-chat', sessionId = source.id) =>
+      observeRequestCorrelation({ requestId, conversationId, sessionId,
+        messageId: `msg-${requestId}`, tool: 'prompt_watch', observedAt: Date.now() });
+    const request = { action: 'interval', everyMinutes: 5, prompt: 'Check the GitHub Actions run and continue.' };
+    expect(failed(await send(null, request))).toBe(true);
+    expect(prove('prompt-watch-create')).toBe('stored');
+    const created = await send('prompt-watch-create', request);
+    expect(failed(created)).toBe(false);
+    expect(textOf(created)).toContain('Prompt watch');
+    const saved = (await import('../src/main/prompt-watches.js')).listPromptWatches;
+    const rows = await saved(source.id);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: 'interval', everyMinutes: 5, prompt: request.prompt });
+    expect(await saved(foreign.id)).toEqual([]);
+    expect(prove('prompt-watch-read-only')).toBe('stored');
+    ctx.readOnly = true;
+    expect(failed(await send('prompt-watch-read-only', { action: 'interval', everyMinutes: 5, prompt: 'Write more prompts' }))).toBe(true);
+    expect(await saved(source.id)).toHaveLength(1);
+    ctx.readOnly = false;
+    expect(prove('prompt-watch-list')).toBe('stored');
+    expect(textOf(await send('prompt-watch-list', { action: 'list' }))).toContain(rows[0]!.id);
+    expect(prove('prompt-watch-process')).toBe('stored');
+    expect(failed(await send('prompt-watch-process', { action: 'exec_process', session_id: 99999 }))).toBe(true);
+    expect(prove('prompt-watch-signal-disabled')).toBe('stored');
+    const disabledSignal = await send('prompt-watch-signal-disabled', { action: 'signal', label: 'External job', prompt: 'Review its result' });
+    expect(failed(disabledSignal)).toBe(true);
+    expect(textOf(disabledSignal)).toContain('Allow actions');
+    expect(prove('prompt-watch-foreign', 'prompt-watch-other-chat', foreign.id)).toBe('stored');
+    expect(failed(await send('prompt-watch-foreign', { action: 'cancel', id: rows[0]!.id }))).toBe(true);
+    expect(prove('prompt-watch-cancel')).toBe('stored');
+    expect(failed(await send('prompt-watch-cancel', { action: 'cancel', id: rows[0]!.id }))).toBe(false);
+    expect(await saved(source.id)).toEqual([]);
   });
 });
 

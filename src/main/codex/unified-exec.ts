@@ -752,6 +752,8 @@ export interface BackgroundExecState {
 
 export class UnifiedExecProcessManager {
   private readonly processes = new Map<number, ProcessEntry>();
+  /** Completion observers only see process identity and exit status, never private output. */
+  private readonly exitListeners = new Set<(event: { processId: number; incarnation: number; exitCode: number | null }) => void>();
   private readonly completed = new Map<number, Pick<ExecCommandToolOutput, 'rawOutput' | 'displayOutput' | 'exitCode' | 'benignExit'> & { identity: object }>();
   private releaseListener?: (processId: number) => void;
   private processChangeListener?: () => void;
@@ -771,6 +773,21 @@ export class UnifiedExecProcessManager {
   /** Presentation observers may reread the manager after a process starts, exits or is discarded. */
   setProcessChangeListener(listener: () => void): void {
     this.processChangeListener = listener;
+  }
+
+  onProcessExit(listener: (event: { processId: number; incarnation: number; exitCode: number | null }) => void): () => void {
+    this.exitListeners.add(listener);
+    return () => this.exitListeners.delete(listener);
+  }
+
+  /** A read-only exact-generation lookup; never consumes a completed terminal's output. */
+  inspectProcess(processId: number, incarnation: number):
+    { state: 'running' } | { state: 'completed'; exitCode: number | null } | { state: 'lost' } {
+    const entry = this.processes.get(processId);
+    if (!entry || entry.incarnation !== incarnation) return { state: 'lost' };
+    return entry.process.hasExited()
+      ? { state: 'completed', exitCode: entry.process.exitCode() }
+      : { state: 'running' };
   }
 
   private notifyProcessChange(): void {
@@ -860,7 +877,13 @@ export class UnifiedExecProcessManager {
         classifyExit: request.classifyExit, batchMarker: request.batchMarker
       });
       void process.completion.then(
-        () => this.notifyProcessChange(),
+        completion => {
+          for (const listener of this.exitListeners) {
+            try { listener({ processId: request.processId, incarnation, exitCode: completion.exitCode }); }
+            catch { /* An observer can never interrupt terminal completion or output retention. */ }
+          }
+          this.notifyProcessChange();
+        },
         () => this.notifyProcessChange()
       );
     }

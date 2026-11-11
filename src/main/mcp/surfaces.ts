@@ -105,11 +105,12 @@ const CORE: SurfaceDefinition = {
     'Use for: opening and reading files, searching a repository, applying patches, creating, renaming and deleting files, ' +
     'running builds, tests, linters, git, npm and shell commands, continuing long-running or interactive terminal sessions, ' +
     'and saving images and files ChatGPT generates onto this computer. ' +
+    'Create recurring follow-up prompts or monitor a GitHub Actions run and resume the same chat when it completes. ' +
     'Also displays task plans and — when the user has ' +
     'enabled it — spawns and coordinates worker agents, subagents or a parallel swarm across several ChatGPT conversations.',
-  cardSummary: 'Files, patches and terminal.',
+  cardSummary: 'Files, plans, task watchers and terminal.',
   required: true,
-  tools: ['read', 'view_image', 'find', 'apply_patch', 'save_image', 'exec_command', 'write_stdin', 'ask_user_to_run', 'user_request_status', 'update_plan', 'agents', 'session_finish', 'usage', 'exec']
+  tools: ['read', 'view_image', 'find', 'apply_patch', 'save_image', 'exec_command', 'write_stdin', 'ask_user_to_run', 'user_request_status', 'update_plan', 'prompt_watch', 'agents', 'session_finish', 'usage', 'exec']
 };
 
 /**
