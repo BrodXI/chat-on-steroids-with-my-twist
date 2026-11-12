@@ -8625,7 +8625,7 @@ interface Repair {
   /** Reference to the existing work owner, invalidated when genuine activity replaces it. */
   silenceGrant?: ActivityGrant;
   /** The authored question owns transport recovery across document-local generation changes. */
-  assistantSource?: { key: string; turnId: string | null; completed: boolean };
+  assistantSource?: { key: string; turnId: string | null; completed: boolean; deliveryTimeout?: true };
   attribution?: { incident: UnattributedIncident; candidate: UnattributedCandidate };
   claimed?: boolean;
   /**
@@ -9653,6 +9653,9 @@ async function noteRecoveryObservations(
       break;
     }
     const source = sessionId ? await assistantRepairSource(sessionId) : null;
+    // An explicit delivery timeout needs a recovery prompt after the browser confirms a reload,
+    // including when the interrupted answer had not yet called a local tool.
+    if (source && /\bmessage delivery timed out\b/i.test(item.text ?? '')) source.deliveryTimeout = true;
     // The reads above yield: the chat may have moved on since, so the report is checked again
     // against the session as it is now, before any recovery is queued (CodeRabbit on #1927).
     if (sessionId && item.turnId && staleReport(await getSession(sessionId))) continue;
@@ -11478,15 +11481,32 @@ async function confirmRepair(token: string, action: 'reloaded' | 'reopened' | 'r
         );
       }
       if (repair.reason === 'assistant-error') {
-        // The automatic Continue after this reload comes only through the silence watch, which needs
-        // this chat's activity grant (#1086). Without one nothing follows, so say so.
-        const watch = activeUntil.get(conversationId);
-        logInfo(watch
-          ? `bridge: ${conversationId} stays under the silence watch after its error reload (turn ${watch.turnId ?? 'unknown'})`
-          : `bridge: ${conversationId} has no activity left for the silence watch after its error reload; no automatic Continue follows unless it works again`);
         // Charge the original question, never the replacement document seen at ACK time.
         if (repair.assistantSource) turnRepairSpent.set(conversationId,
           { sessionId: repair.sessionId, turnKey: repair.assistantSource.key, token: repair.token, at: Date.now() });
+        // Unlike a generic stream interruption, an explicit delivery timeout requests a
+        // post-reload Continue even if the old MCP-backed silence grant has expired.
+        // The durable outbox still rejects pending authored sends, newer questions, live
+        // work, completed answers and attempts to replay an already authorized Send.
+        const source = repair.assistantSource;
+        if (source?.deliveryTimeout && source.turnId && !source.completed &&
+            recoveryInputAllowed(repair.sessionId, conversationId) &&
+            await assistantRepairCurrent(conversationId, repair)) {
+          const selected = (await getSession(repair.sessionId))?.selectedModel;
+          const pro = selected?.conversationId === conversationId &&
+            isProModel(selected.model, selected.reasoningEffort);
+          const filed = await fileRecoveryInput(repair.sessionId, conversationId, source.turnId, pro,
+            () => repairsInFlight.get(conversationId) === repair && repair.state === 'done' &&
+              !stopRequestedFor(conversationId) && !isChatBlocked(conversationId) &&
+              !continuationForSession(repair.sessionId),
+            Date.now() + recoveryBusyMs(pro), `delivery-timeout:${repair.token}`, true);
+          logInfo(`bridge: ${conversationId} delivery timeout after reload — recovery prompt ${filed ? 'queued' : 'withheld by outbox safety checks'}`);
+        } else {
+          const watch = activeUntil.get(conversationId);
+          logInfo(watch
+            ? `bridge: ${conversationId} stays under the silence watch after its error reload (turn ${watch.turnId ?? 'unknown'})`
+            : `bridge: ${conversationId} has no activity left for the silence watch after its error reload; no automatic Continue follows unless it works again`);
+        }
       }
       await updateRepairProgress(
         conversationId,
