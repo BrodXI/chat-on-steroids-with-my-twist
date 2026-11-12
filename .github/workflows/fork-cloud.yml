@@ -9,6 +9,7 @@ on:
         type: choice
         options:
           - checks
+          - focused-recovery
           - browser-extensions
           - windows-installer
         default: checks
@@ -44,6 +45,23 @@ jobs:
         run: npx vitest run --maxWorkers=2 --exclude test/mcp-shutdown.test.ts --exclude test/computer.test.ts
       - name: Exclusive unit tests
         run: npx vitest run --maxWorkers=1 test/computer.test.ts test/mcp-shutdown.test.ts
+
+  focused-recovery:
+    if: inputs.task == 'focused-recovery'
+    name: Focused recovery tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Focused recovery regression tests
+        run: npx vitest run --maxWorkers=1 test/bridge-done-repair-silence.test.ts test/input-delivery-integration.test.ts test/renderer-recovery.test.ts
 
   browser-extensions:
     if: inputs.task == 'browser-extensions' || inputs.task == 'windows-installer'
