@@ -1380,6 +1380,9 @@ main {
 }
 
 #dismissPluginRefreshReminder { flex: none; }
+.upstream-release-notice { padding: 4px 12px; gap: 7px; min-height: 29px; font-size: calc(11.5px * var(--text-scale, 1)); }
+.upstream-release-notice span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upstream-release-notice .btn { flex: none; padding: 3px 6px; }
 /* Two actions beside a long sentence: on a narrow window they move to their own line instead of
    squeezing the sentence into a column (German made the notice 340 px tall). */
 #desktopAccessNotice { flex-wrap: wrap; row-gap: 4px; }

@@ -1,4 +1,7 @@
 {
+  "View changes": "Xem thay đổi",
+  "Dismiss official update notice": "Ẩn thông báo cập nhật chính thức",
+  "Official CoS {0} is out. Your fork is updated separately.": "CoS chính thức {0} đã phát hành. Bản fork được cập nhật riêng.",
   "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "Dùng công cụ GitHub đã kết nối để truy cập kho này. CoS sẽ không sao chép kho hoặc tạo thư mục cục bộ.",
   "Create cloud project": "Tạo dự án đám mây",
   "Creating project…": "Đang tạo dự án…",

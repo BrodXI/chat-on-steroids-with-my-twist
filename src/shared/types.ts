@@ -849,7 +849,7 @@ export interface UpdateStatus {
 export type UpdateAllResult = 'restarting' | 'manual' | 'checking-connectors' | 'confirm';
 
 /** Where an installation that cannot update itself gets the new version by hand. */
-export const RELEASES_PAGE = 'https://github.com/totec448-spec/chat-on-steroids/releases/latest';
+export const RELEASES_PAGE = 'https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases';
 
 /**
  * Whether `candidate` is a later release than `current`, compared as three numbers.
@@ -937,6 +937,8 @@ export interface AppState {
   /** Whether the CoS browser holds a ChatGPT sign-in; null while it is not the running browser. */
   cosBrowserSignedIn?: boolean | null;
   update: UpdateStatus;
+  /** Official upstream release announcement only, separate from the fork's installable updates. */
+  upstream?: { latest: string | null; checkedAt: number | null };
   /** Present only on macOS once the in-process native backend has reported its live TCC state. */
   desktopAccess?: MacOSDesktopAccessStatus | null;
   /** This run's settings file could not be read, so the app started read-only; cleared once read-only is off. */

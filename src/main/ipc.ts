@@ -141,7 +141,7 @@ import {
   browserPickupContext
 } from './bridge.js';
 import { extensionDir } from './extension-path.js';
-import { APP_VERSION, extensionDownloadUrl } from './version.js';
+import { APP_VERSION, BUILD_COMMIT, extensionDownloadUrl } from './version.js';
 import {
   deleteSession,
   clearImageStorage,
@@ -192,6 +192,8 @@ import { onConnectorProofChange } from './connector-proof.js';
 import { opensInCosBrowser } from '../shared/cos-browser-sites.js';
 import { openInPreferredBrowser } from './browser.js';
 import { checkForUpdatesIfStale, manualDownloadUrl, markInstallOnQuit, onUpdateChange, updateStatus } from './update.js';
+import { onUpstreamUpdate, upstreamUpdateStatus } from './upstream-updates.js';
+import { FORK_RELEASES_PAGE, installedForkExtensionUrl } from './fork-releases.js';
 import { updateAll } from './update-all.js';
 import {
   getMacOSDesktopAccess,
@@ -712,6 +714,7 @@ async function buildState(): Promise<AppState> {
     bridge: await bridgeStatus(),
     cosBrowserSignedIn: cosBrowserSignedIn(),
     update: updateStatus(),
+    upstream: upstreamUpdateStatus(),
     desktopAccess: getMacOSDesktopAccess(),
     settingsRecovered: settingsRecovered()
   };
@@ -2074,7 +2077,9 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     }
     // Firefox installs the signed add-on from its release download; it asks before adding it.
     if (browser === 'firefox') {
-      await openInPreferredBrowser(firefoxAddonUrl(APP_VERSION), { browser, reveal: true });
+      await openInPreferredBrowser(BUILD_COMMIT
+        ? (await installedForkExtensionUrl(BUILD_COMMIT, 'firefox')) ?? FORK_RELEASES_PAGE
+        : firefoxAddonUrl(APP_VERSION), { browser, reveal: true });
       return true;
     }
     // A browser opens its own internal pages only from its address bar: given on the command line,
@@ -2559,7 +2564,9 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
   handle('bridge:downloadExtension', async () => {
     // This is a recovery path for the extension bundled with *this installed app*. Never use
     // releases/latest here: an old app must not fetch a newer extension with a newer protocol.
-    await shell.openExternal(extensionDownloadUrl(app.getVersion()));
+    await shell.openExternal(BUILD_COMMIT
+      ? (await installedForkExtensionUrl(BUILD_COMMIT, 'chrome')) ?? FORK_RELEASES_PAGE
+      : extensionDownloadUrl(app.getVersion()));
     return true;
   });
 
@@ -2886,6 +2893,7 @@ export function registerIpc(getWindow: () => BrowserWindow | null, quitToInstall
     }
   } });
   onUpdateChange(pushState);
+  onUpstreamUpdate(pushState);
   onMacOSDesktopAccessChange(pushState);
   onLog((entry) => push('log:entry', entry));
   // Recorder pushes name their exact transcript owners; payload-less pushes are catalog/control only.

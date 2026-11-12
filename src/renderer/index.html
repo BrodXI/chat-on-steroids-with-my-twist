@@ -136,6 +136,12 @@
            state.update plus the extension version the bridge already reports; see
            src/main/update.ts. Hidden whenever there is nothing to say. -->
       <div class="notices">
+      <div class="notice upstream-release-notice" id="upstreamReleaseNotice" role="status" hidden>
+        <i class="ico ph ph-git-branch" aria-hidden="true"></i>
+        <span id="upstreamReleaseText"></span>
+        <button class="btn btn-quiet" id="upstreamReleaseView" type="button">View changes</button>
+        <button class="btn btn-icon" id="upstreamReleaseDismiss" type="button" title="Dismiss official update notice" aria-label="Dismiss official update notice"><i class="ico ph ph-x" aria-hidden="true"></i></button>
+      </div>
       <!-- A new macOS build asks once for the Keychain password; everything that needs saved keys
            waits for the answer. See src/renderer/keychain-notice.ts. -->
       <div class="notice" id="keychainNotice" role="status" hidden>

@@ -47,11 +47,16 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { app } from 'electron';
 import { logInfo, logWarn } from './logger.js';
-import { APP_VERSION } from './version.js';
+import { APP_VERSION, BUILD_COMMIT } from './version.js';
+import { FORK_RELEASES_PAGE, FORK_REPO, newestForkUpgrade, safeReleaseTag } from './fork-releases.js';
 import { isNewer, type UpdateStatus } from '../shared/types.js';
 
-const REPO = 'totec448-spec/chat-on-steroids';
+const REPO = FORK_REPO;
 const LATEST_RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`;
+let installedCommit = BUILD_COMMIT;
+let availableForkAssets: ReadonlySet<string> | null = null;
+/** Test seam: the release selector must be verified through the actual staging path. */
+export function setUpdateBuildCommitForTests(commit: string): void { installedCommit = commit; }
 
 const CHECK_TIMEOUT_MS = 15_000;
 /**
@@ -132,8 +137,12 @@ export function manualDownloadName(
 
 /** Where "Get update" sends this installation: its exact file for `version`, else the page. */
 export function manualDownloadUrl(version: string | null, name: string | null = manualDownloadName()): string {
-  const page = `https://github.com/${REPO}/releases/latest`;
-  return version && /^\d+\.\d+\.\d+$/.test(version) && name ? `https://github.com/${REPO}/releases/download/v${version}/${name}` : page;
+  // A fork preview has its own tag, not a synthetic upstream vX.Y.Z tag.
+  if (version && name && version === status.latest && availableForkAssets && !availableForkAssets.has(name)) {
+    return safeReleaseTag(version) ? `https://github.com/${REPO}/releases/tag/${encodeURIComponent(version)}` : FORK_RELEASES_PAGE;
+  }
+  return version && safeReleaseTag(version) && name && /^[\w.-]+$/.test(name)
+    ? assetUrl(version, name) : FORK_RELEASES_PAGE;
 }
 
 /** `v2.0.3` -> `2.0.3`, and anything that is not a release tag -> null. */
@@ -146,7 +155,7 @@ export function releaseVersion(tag: unknown): string | null {
 const CLEAR: UpdateStatus = { current: APP_VERSION, latest: null, stage: 'idle', error: null, checkedAt: null };
 
 let status: UpdateStatus = CLEAR;
-let staged: { version: string; file: string; kind: 'installer' | 'appimage'; target: string; digest: string } | null = null;
+let staged: { version: string; commit?: string; file: string; kind: 'installer' | 'appimage'; target: string; digest: string } | null = null;
 let pass: Promise<void> | null = null;
 /** Set by `markInstallOnQuit`: the user pressed Install, so bring the app back afterwards. */
 let runAfterInstall = false;
@@ -207,11 +216,14 @@ const handoffNote = () => path.join(app.getPath('userData'), 'updates', 'handoff
  * start that is that version, or newer, just forgets the note.
  */
 export async function restoreUpdateHandoff(): Promise<void> {
-  let note: { version?: unknown } | null = null;
+  let note: { version?: unknown; commit?: unknown } | null = null;
   try { note = JSON.parse(await readFile(handoffNote(), 'utf8')); } catch { return; }
   await rm(handoffNote(), { force: true }).catch(() => undefined);
-  const version = typeof note?.version === 'string' && /^\d+\.\d+\.\d+$/.test(note.version) ? note.version : null;
-  if (version && isNewer(version, APP_VERSION)) {
+  const version = safeReleaseTag(note?.version) ? note.version : null;
+  const failed = version && (typeof note?.commit === 'string' && /^[a-f0-9]{40}$/i.test(note.commit) && installedCommit
+    ? note.commit.toLowerCase() !== installedCommit.toLowerCase()
+    : isNewer(version, APP_VERSION));
+  if (version && failed) {
     set({ notInstalled: version });
     logWarn(`update: ${version} was handed to its installer, but this is still ${APP_VERSION}; it did not install`);
   }
@@ -285,14 +297,19 @@ async function runPass(): Promise<void> {
   // Installed downloads are obsolete even when the release server is unreachable.
   if (app.isPackaged) await pruneUpdateCache();
   stillCurrent();
-  const release = { version: await latestVersion() };
+  const fork = installedCommit ? await newestForkUpgrade(installedCommit) : null;
+  const release = installedCommit
+    ? { version: fork?.tag ?? null, commit: fork?.commit, digests: fork?.digests }
+    : { version: await latestVersion(), commit: undefined, digests: undefined };
   stillCurrent();
+  availableForkAssets = release.digests ? new Set(release.digests.keys()) : null;
   // GitHub answered. From here the UI can tell "current" from "not asked yet", whatever the
   // rest of this pass does with the answer.
   set({ checkedAt: Date.now() });
   // A newly published selection retires the previous executable authority before any file replacement.
-  if (staged?.version !== release.version || !isNewer(release.version, APP_VERSION)) staged = null;
-  if (!isNewer(release.version, APP_VERSION)) {
+  const newer = installedCommit ? Boolean(release.version) : Boolean(release.version && isNewer(release.version, APP_VERSION));
+  if (staged?.version !== release.version || !newer) staged = null;
+  if (!newer || !release.version) {
     // Up to date, or ahead of the published release on a development build. Both mean nothing
     // to offer, and `latest` stays null so nothing in the UI claims otherwise.
     set({ latest: null, stage: 'idle' });
@@ -314,13 +331,13 @@ async function runPass(): Promise<void> {
   // One read of the release's own checksums, for whichever of the two paths below runs. It is
   // both the manifest of what the release contains and the proof of what may be executed, so
   // neither adopting a file nor fetching one happens without it.
-  const expected = (await releaseDigests(release.version)).get(artifact.name);
+  const expected = (release.digests ?? await releaseDigests(release.version)).get(artifact.name);
   stillCurrent();
   if (!expected) throw new Error(`release ${release.version} publishes no ${artifact.name}`);
   const carried = await adopt(release.version, artifact.name, expected);
   stillCurrent();
   if (carried) {
-    staged = { version: release.version, file: carried, kind: artifact.kind, target: artifact.target, digest: expected };
+    staged = { version: release.version, ...(release.commit ? { commit: release.commit } : {}), file: carried, kind: artifact.kind, target: artifact.target, digest: expected };
     set({ latest: release.version, stage: 'ready' });
     logInfo(`update: ${release.version} was already downloaded and is ready to install`);
     return;
@@ -328,7 +345,7 @@ async function runPass(): Promise<void> {
   set({ latest: release.version, stage: 'downloading' });
   const file = await download(release.version, artifact.name, expected);
   stillCurrent();
-  staged = { version: release.version, file, kind: artifact.kind, target: artifact.target, digest: expected };
+  staged = { version: release.version, ...(release.commit ? { commit: release.commit } : {}), file, kind: artifact.kind, target: artifact.target, digest: expected };
   set({ stage: 'ready' });
   logInfo(`update: ${release.version} is downloaded and ready to install`);
 }
@@ -353,8 +370,8 @@ async function pruneUpdateCache(keepVersion?: string): Promise<void> {
     const entries = await readdir(root, { withFileTypes: true });
     stillCurrent();
     for (const entry of entries) {
-      if (!entry.isDirectory() || !/^\d+\.\d+\.\d+$/.test(entry.name) || entry.name === keepVersion) continue;
-      if (isNewer(entry.name, APP_VERSION) && !keepVersion) continue;
+      if (!entry.isDirectory() || !(/^(?:v?\d+\.\d+\.\d+|cos-[\w.-]+)$/.test(entry.name)) || entry.name === keepVersion) continue;
+      if (!installedCommit && isNewer(entry.name, APP_VERSION) && !keepVersion) continue;
       try {
         stillCurrent();
         await rm(path.join(root, entry.name), { recursive: true, force: true });
@@ -465,7 +482,9 @@ async function releaseDigests(version: string): Promise<Map<string, string>> {
 
 /** The url of one release asset. Built here, never taken from a response body. */
 function assetUrl(version: string, name: string): string {
-  return `https://github.com/${REPO}/releases/download/v${encodeURIComponent(version)}/${name}`;
+  const tag = /^\d+\.\d+\.\d+$/.test(version) ? `v${version}` : version;
+  if (!safeReleaseTag(tag) || !/^[\w.-]+$/.test(name)) throw new Error('Invalid fork release asset');
+  return `https://github.com/${REPO}/releases/download/${encodeURIComponent(tag)}/${name}`;
 }
 
 async function get(url: string, timeout: number | AbortSignal, headers: Record<string, string> = {}): Promise<Response> {
@@ -669,7 +688,7 @@ export async function applyStagedUpdate(): Promise<void> {
       // about 100 s. An ordinary quit stays silent.
       const args = relaunch ? ['--updated', '--force-run'] : ['/S', '--updated'];
       const elevate = process.platform === 'win32' && !(await installFolderAccess(path.dirname(process.execPath)));
-      await writeFile(handoffNote(), JSON.stringify({ version: ready.version, at: Date.now() })).catch(() => undefined);
+      await writeFile(handoffNote(), JSON.stringify({ version: ready.version, commit: ready.commit, at: Date.now() })).catch(() => undefined);
       if (elevate) {
         logInfo(`update: the install folder needs an administrator; Windows asks for permission to install ${ready.version}`);
         handoffStep('permission');
@@ -716,7 +735,9 @@ export function resetUpdateForTests(): void {
   resetSignal.abort();
   resetSignal = new AbortController();
   installFolderAccess = probeInstallFolder;
+  installedCommit = BUILD_COMMIT;
   status = CLEAR;
+  availableForkAssets = null;
   staged = null;
   pass = null;
   runAfterInstall = false;

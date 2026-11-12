@@ -1,4 +1,7 @@
 {
+  "View changes": "Değişiklikleri gör",
+  "Dismiss official update notice": "Resmî güncelleme bildirimini kapat",
+  "Official CoS {0} is out. Your fork is updated separately.": "Resmî CoS {0} yayımlandı. Fork sürümün ayrı güncellenir.",
   "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "Bu depoya bağlı GitHub aracıyla eriş. CoS depoyu klonlamaz veya yerel klasör oluşturmaz.",
   "Create cloud project": "Bulut projesi oluştur",
   "Creating project…": "Proje oluşturuluyor…",

@@ -1,13 +1,21 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 /** Fonts always ship as files; anything else keeps Vite's default inlining. */
 export const rendererAssetsInlineLimit = (file: string): boolean | undefined => /\.(?:woff2?|ttf|otf|eot)$/i.test(file) ? false : undefined;
 
 const nixNodeModules = process.env.npmDeps ? resolve(process.env.npmDeps, 'node_modules') : null;
+const buildCommit = (() => {
+  if (process.env.GITHUB_SHA && /^[0-9a-f]{40}$/i.test(process.env.GITHUB_SHA)) return process.env.GITHUB_SHA;
+  try { const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: __dirname, encoding: 'utf8', timeout: 5_000 }).trim();
+    return /^[0-9a-f]{40}$/i.test(sha) ? sha : '';
+  } catch { return ''; }
+})();
 
 export default defineConfig({
   main: {
+    define: { __COS_BUILD_COMMIT__: JSON.stringify(buildCommit) },
     // Keep node_modules external so the MCP SDK ships as real files in the asar
     // rather than being inlined by the bundler.
     plugins: [externalizeDepsPlugin()],

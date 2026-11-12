@@ -14,12 +14,18 @@
 
 export const APP_VERSION = '2.1.52';
 
+/** Embedded at package build time (GitHub Actions uses the checked-out commit). */
+declare const __COS_BUILD_COMMIT__: string;
+export const BUILD_COMMIT = typeof __COS_BUILD_COMMIT__ === 'string' ? __COS_BUILD_COMMIT__ : '';
+
 /**
  * Standalone extension recovery must stay on the app's own release. Using GitHub's moving
  * `latest` asset can pair an older installed app with a newer, incompatible bridge protocol.
  */
 export function extensionDownloadUrl(version = APP_VERSION): string {
-  return `https://github.com/totec448-spec/chat-on-steroids/releases/download/v${encodeURIComponent(version)}/Chat-On-Steroids-Extension.zip`;
+  // A stable-tag fallback for older installations. Fork previews use their exact tag instead.
+  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Not a release version');
+  return `https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases/download/v${encodeURIComponent(version)}/Chat-On-Steroids-Extension.zip`;
 }
 
 /**
