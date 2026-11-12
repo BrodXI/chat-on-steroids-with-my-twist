@@ -73,6 +73,62 @@ beforeEach(async () => {
   await saveConfig({ ...defaultConfig(), ui: { ...defaultConfig().ui, autoContinue: false }, goal: { ...defaultConfig().goal, enabled: false } });
 });
 
+it.each([
+  ['Message delivery timed out. Please try again.', true],
+  ['Connection interrupted. Waiting for the complete answer', false]
+] as const)('only queues a tool-free recovery prompt after a confirmed reload for %s', async (errorText, timedOut) => {
+  await saveConfig({ ...defaultConfig(), ui: { ...defaultConfig().ui, autoContinue: true } });
+  const conversationId = randomUUID(), turnId = randomUUID(), questionId = randomUUID();
+  const session = await createSession({ title: 'Post-reload delivery timeout', conversationId });
+  const at = Date.now();
+  await post('/events', { conversationId, events: [
+    { kind: 'user_message', messageId: questionId, text: 'Complete the work', time: at },
+    { kind: 'turn_start', turnId, time: at + 1 },
+    { kind: 'chat_error', turnId, text: errorText, recoverable: true, time: at + 2 }
+  ] });
+  const repair = (await post('/status', { openConversations: [conversationId] })).body.repairs
+    .find((row: any) => row.conversationId === conversationId && row.reason === 'assistant-error');
+  expect(repair).toBeDefined();
+  // No prompt is authorized until the browser confirms the actual reload.
+  expect((await input.listInputs()).filter(row => row.sessionId === session.id && row.recovery)).toHaveLength(0);
+  if (repair.requiresClaim) expect((await post('/repairs/claim', { token: repair.token })).body.allowed).toBe(true);
+  await post(`/status?repaired=${repair.token}&repairAction=reloaded`, { openConversations: [conversationId] });
+  const rows = (await input.listInputs()).filter(row => row.sessionId === session.id && row.recovery);
+  expect(rows).toHaveLength(timedOut ? 1 : 0);
+  if (timedOut) {
+    expect(rows[0]).toMatchObject({ state: 'queued', recovery: { questionId, deliveryTimeout: true }, silenceBoundary: { turnId } });
+    // Replayed acknowledgements must not mint another recovery prompt.
+    await post(`/status?repaired=${repair.token}&repairAction=reloaded`, { openConversations: [conversationId] });
+    expect((await input.listInputs()).filter(row => row.sessionId === session.id && row.recovery)).toHaveLength(1);
+    // A late canonical answer invalidates the unsent Continue.
+    await post('/events', { conversationId, events: [
+      { kind: 'assistant_message', messageId: randomUUID(), turnId, text: 'Finished', state: 'final', final: true, time: at + 3 },
+      { kind: 'turn_end', turnId, outcome: 'completed', time: at + 4 }
+    ] });
+    expect((await input.pendingBrowserInputs()).some(row => row.id === rows[0]!.id)).toBe(false);
+  }
+});
+
+it('does not queue a timeout recovery prompt over an authored message still awaiting delivery', async () => {
+  await saveConfig({ ...defaultConfig(), ui: { ...defaultConfig().ui, autoContinue: true } });
+  const conversationId = randomUUID(), turnId = randomUUID(), questionId = randomUUID();
+  const session = await createSession({ title: 'Blocked duplicate delivery', conversationId });
+  const pending = await input.enqueueInput({ ...message(session.id, 'off'), mode: 'after-turn' });
+  const at = Date.now();
+  await post('/events', { conversationId, events: [
+    { kind: 'user_message', messageId: questionId, text: 'Complete the work', time: at },
+    { kind: 'turn_start', turnId, time: at + 1 },
+    { kind: 'chat_error', turnId, text: 'Message delivery timed out. Please try again.', recoverable: true, time: at + 2 }
+  ] });
+  const repair = (await post('/status', { openConversations: [conversationId] })).body.repairs
+    .find((row: any) => row.conversationId === conversationId && row.reason === 'assistant-error');
+  expect(repair).toBeDefined();
+  if (repair.requiresClaim) expect((await post('/repairs/claim', { token: repair.token })).body.allowed).toBe(true);
+  await post(`/status?repaired=${repair.token}&repairAction=reloaded`, { openConversations: [conversationId] });
+  expect((await input.listInputs()).filter(row => row.sessionId === session.id && row.recovery)).toHaveLength(0);
+  expect((await input.listInputs()).find(row => row.id === pending.id)?.state).toBe('queued');
+});
+
 it.each([false, true])('pauses completed queued input at manual close through the final Send fence (claimed: %s)', async claimed => {
   let now = Date.now(); const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
   try {
