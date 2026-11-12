@@ -1,4 +1,7 @@
 {
+  "View changes": "查看更新內容",
+  "Dismiss official update notice": "關閉官方更新通知",
+  "Official CoS {0} is out. Your fork is updated separately.": "官方 CoS {0} 已推出。你的分支會另外更新。",
   "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "使用已連線的 GitHub 工具存取此儲存庫。CoS 不會複製儲存庫或建立本機資料夾。",
   "Create cloud project": "建立雲端專案",
   "Creating project…": "正在建立專案…",

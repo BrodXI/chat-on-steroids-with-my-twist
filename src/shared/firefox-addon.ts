@@ -7,7 +7,7 @@
  * manifest named in the add-on itself.
  */
 export const FIREFOX_ADDON_ASSET = 'Chat-On-Steroids-Firefox.xpi';
-const RELEASES = 'https://github.com/totec448-spec/chat-on-steroids/releases/download';
+const RELEASES = 'https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases/download';
 
 export function firefoxAddonUrl(version: string): string {
   if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error('Not a release version');

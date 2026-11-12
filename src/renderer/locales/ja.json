@@ -1,4 +1,7 @@
 {
+  "View changes": "変更内容を見る",
+  "Dismiss official update notice": "公式アップデートのお知らせを閉じる",
+  "Official CoS {0} is out. Your fork is updated separately.": "公式 CoS {0} が公開されました。フォークの更新は別途行います。",
   "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "接続済みの GitHub ツールでこのリポジトリにアクセスします。CoS はクローンやローカルフォルダーの作成を行いません。",
   "Create cloud project": "クラウドプロジェクトを作成",
   "Creating project…": "プロジェクトを作成中…",

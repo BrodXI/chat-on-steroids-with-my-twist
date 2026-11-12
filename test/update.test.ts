@@ -91,6 +91,7 @@ const {
   onInstallerTakeover,
   onUpdateHandoffStep,
   releaseVersion,
+  setUpdateBuildCommitForTests,
   resetUpdateForTests,
   restoreUpdateHandoff,
   setInstallFolderAccessForTests,
@@ -134,10 +135,10 @@ function github(options: {
       if (options.fail === 'release') return new Response('nope', { status: 503 });
       return new Response(JSON.stringify({ tag_name: `v${version}` }), { status: 200 });
     }
-    if (url === 'https://github.com/totec448-spec/chat-on-steroids/releases/latest') {
+    if (url === 'https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases/latest') {
       if (typeof options.page === 'number') return new Response(null, { status: options.page });
       const landed = new Response(null, { status: 200 });
-      Object.defineProperty(landed, 'url', { value: options.page ?? `https://github.com/totec448-spec/chat-on-steroids/releases/tag/v${version}` });
+      Object.defineProperty(landed, 'url', { value: options.page ?? `https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases/tag/v${version}` });
       return landed;
     }
     if (name === 'SHA256SUMS.txt') {
@@ -199,10 +200,12 @@ describe('the file Get update opens for an installation that cannot update itsel
   });
   it('links that file for the announced version, and the release page otherwise', () => {
     expect(manualDownloadUrl('2.1.17', 'Chat-On-Steroids-macOS-arm64.dmg'))
-      .toBe('https://github.com/totec448-spec/chat-on-steroids/releases/download/v2.1.17/Chat-On-Steroids-macOS-arm64.dmg');
-    expect(manualDownloadUrl(null, 'Chat-On-Steroids-macOS-arm64.dmg')).toBe('https://github.com/totec448-spec/chat-on-steroids/releases/latest');
-    expect(manualDownloadUrl('2.1.17', null)).toBe('https://github.com/totec448-spec/chat-on-steroids/releases/latest');
-    expect(manualDownloadUrl('../evil', 'x.dmg')).toBe('https://github.com/totec448-spec/chat-on-steroids/releases/latest');
+      .toBe('https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases/download/v2.1.17/Chat-On-Steroids-macOS-arm64.dmg');
+    expect(manualDownloadUrl(null, 'Chat-On-Steroids-macOS-arm64.dmg')).toBe('https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases');
+    expect(manualDownloadUrl('2.1.17', null)).toBe('https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases');
+    expect(manualDownloadUrl('../evil', 'x.dmg')).toBe('https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases');
+    expect(manualDownloadUrl('cos-cloud-preview-a1b2c3d4', 'Chat-On-Steroids-Setup-x64.exe'))
+      .toBe('https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases/download/cos-cloud-preview-a1b2c3d4/Chat-On-Steroids-Setup-x64.exe');
   });
 });
 
@@ -818,6 +821,31 @@ describe('staging the new version', () => {
 });
 
 describe('one pass at a time, and one more next time the app opens', () => {
+  it('stages the fork\'s custom-tag preview only after confirming descendant commit and exact GitHub asset hash', async () => {
+    const before = 'a'.repeat(40), after = 'b'.repeat(40), tag = 'cos-updater-preview-bbbbbbbb';
+    const bytes = 'fork preview Windows installer';
+    const requested: string[] = [];
+    setUpdateBuildCommitForTests(before);
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL) => {
+      const url = String(input); requested.push(url);
+      if (url.endsWith('/releases?per_page=30')) return new Response(JSON.stringify([{
+        tag_name: tag, target_commitish: after, draft: false, prerelease: true,
+        assets: [{ name: WINDOWS_ASSET, digest: `sha256:${sha256(bytes)}` }]
+      }]));
+      if (url.includes('/compare/')) return new Response(JSON.stringify({ status: 'ahead', ahead_by: 1 }));
+      if (url.endsWith(`/${WINDOWS_ASSET}`)) return new Response(bytes);
+      throw new Error(`Unexpected request ${url}`);
+    }));
+    await asPlatform('win32', undefined, () => checkForUpdates());
+    expect(updateStatus()).toMatchObject({ latest: tag, stage: 'ready', error: null });
+    expect(requested.some(url => url.includes('totec448-spec'))).toBe(false);
+    expect(requested.some(url => url.endsWith('/SHA256SUMS.txt'))).toBe(false);
+    expect(readFileSync(path.join(userData, 'updates', tag, WINDOWS_ASSET), 'utf8')).toBe(bytes);
+    expect(markInstallOnQuit(tag)).toBe(true);
+    await asPlatform('win32', undefined, () => applyStagedUpdate());
+    expect(spawned[0]?.file).toBe(path.join(userData, 'updates', tag, WINDOWS_ASSET));
+    expect(JSON.parse(readFileSync(path.join(userData, 'updates', 'handoff.json'), 'utf8')).commit).toBe(after);
+  });
   it('joins a check that is already running instead of downloading twice', async () => {
     const { asked } = github();
     await asPlatform('win32', undefined, async () => {
@@ -854,7 +882,7 @@ describe('one pass at a time, and one more next time the app opens', () => {
 
   it('trusts the release page only when it lands on a version tag on github.com', async () => {
     for (const page of ['https://evil.example/totec448-spec/chat-on-steroids/releases/tag/v9.9.9',
-      'https://github.com/totec448-spec/chat-on-steroids/releases', 404]) {
+      'https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases', 404]) {
       resetUpdateForTests();
       github({ apiStatus: 403, page });
       await asPlatform('win32', undefined, () => checkForUpdates());
@@ -865,7 +893,7 @@ describe('one pass at a time, and one more next time the app opens', () => {
     const { fetch } = github({ fail: 'release' });
     await checkForUpdates();
     expect(updateStatus().error).toContain('503');
-    expect(fetch.mock.calls.map(([url]) => String(url))).not.toContain('https://github.com/totec448-spec/chat-on-steroids/releases/latest');
+    expect(fetch.mock.calls.map(([url]) => String(url))).not.toContain('https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases/latest');
   });
 
   it('retries the next time the app opens after a download that stopped', async () => {
@@ -1093,9 +1121,9 @@ describe('a check or download that goes wrong on a bad connection', () => {
   it.each(['API', 'public release page', 'artifact'] as const)('explains a rejected %s request, keeps its diagnostic and can retry', async request => {
     const { fetch } = github({ apiStatus: request === 'public release page' ? 403 : undefined });
     const answer = fetch.getMockImplementation()!;
-    const target = request === 'API' ? 'https://api.github.com/repos/totec448-spec/chat-on-steroids/releases/latest'
-      : request === 'public release page' ? 'https://github.com/totec448-spec/chat-on-steroids/releases/latest'
-      : `https://github.com/totec448-spec/chat-on-steroids/releases/download/v${NEXT}/${WINDOWS_ASSET}`;
+    const target = request === 'API' ? 'https://api.github.com/repos/BrodXI/chat-on-steroids-with-my-twist/releases/latest'
+      : request === 'public release page' ? 'https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases/latest'
+      : `https://github.com/BrodXI/chat-on-steroids-with-my-twist/releases/download/v${NEXT}/${WINDOWS_ASSET}`;
     fetch.mockImplementation(async input => {
       if (String(input) === target) {
         throw new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED') });

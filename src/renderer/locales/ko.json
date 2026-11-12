@@ -1,4 +1,7 @@
 {
+  "View changes": "변경 사항 보기",
+  "Dismiss official update notice": "공식 업데이트 알림 닫기",
+  "Official CoS {0} is out. Your fork is updated separately.": "공식 CoS {0}이 출시되었습니다. 포크는 별도로 업데이트됩니다.",
   "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "연결된 GitHub 도구로 이 저장소에 액세스합니다. CoS는 복제하거나 로컬 폴더를 만들지 않습니다.",
   "Create cloud project": "클라우드 프로젝트 만들기",
   "Creating project…": "프로젝트 만드는 중…",

@@ -1533,6 +1533,29 @@ function paintUpdate(next: AppState): void {
   }
 }
 
+/** An upstream release is news, not permission to install from the upstream repository. */
+function paintUpstreamRelease(next: AppState): void {
+  const latest = next.upstream?.latest;
+  let dismissed: string | null = null;
+  try { dismissed = localStorage.getItem('cos-upstream-release-dismissed'); } catch { /* Private storage unavailable. */ }
+  const visible = Boolean(latest && /^\d+\.\d+\.\d+$/.test(latest) && latest !== dismissed);
+  $('upstreamReleaseNotice').hidden = !visible;
+  if (visible) ui($('upstreamReleaseText'), 'textContent', () =>
+    t('Official CoS {0} is out. Your fork is updated separately.', [latest]));
+}
+
+$('upstreamReleaseView').addEventListener('click', () => {
+  const latest = state?.upstream?.latest;
+  if (latest && /^\d+\.\d+\.\d+$/.test(latest))
+    void run(api.openLink(`https://github.com/totec448-spec/chat-on-steroids/releases/tag/v${latest}`, { external: true }));
+});
+$('upstreamReleaseDismiss').addEventListener('click', () => {
+  const latest = state?.upstream?.latest;
+  if (!latest) return;
+  try { localStorage.setItem('cos-upstream-release-dismissed', latest); } catch { /* Ephemeral dismissal. */ }
+  $('upstreamReleaseNotice').hidden = true;
+});
+
 function paintSetupProfiles(next: AppState): void {
   const tunnel = next.config.tunnel;
   const select = $<HTMLButtonElement>('setupProfile');
@@ -1814,6 +1837,7 @@ function apply(next: AppState): void {
 
   // ---- out of date, app or extension
   paintUpdate(next);
+  paintUpstreamRelease(next);
   paintUpdateReadiness(next, updateAllError);
   paintPluginRefreshRecovery(next);
   paintPluginRefreshReminder(next.connectorSchemas ?? {}, next.confirmedConnectorSchemas ?? {});

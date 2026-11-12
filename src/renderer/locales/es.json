@@ -1,4 +1,7 @@
 {
+  "View changes": "Ver cambios",
+  "Dismiss official update notice": "Descartar aviso de actualización oficial",
+  "Official CoS {0} is out. Your fork is updated separately.": "Ya está disponible CoS oficial {0}. Tu fork se actualiza por separado.",
   "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "Usa la herramienta de GitHub conectada para acceder a este repositorio. CoS no lo clonará ni creará una carpeta local.",
   "Create cloud project": "Crear proyecto en la nube",
   "Creating project…": "Creando proyecto…",
