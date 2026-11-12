@@ -127,6 +127,7 @@ import { firstTurnStart, renderTurnChanges, turnEditCount, turnFinished, turnFro
 import { initSharePage } from './share-page.js';
 import { initFeedbackDialog } from './feedback-dialog.js';
 import { createChatgptProjectPicker } from './chatgpt-project-picker.js';
+import { initProjectImportDialogs } from './project-import-dialogs.js';
 import { openRelatedFolders } from './related-folders-dialog.js';
 import { initScheduleDialog } from './schedule-dialog.js';
 import { nextRunAfter, sameLocalDay, type ScheduleRepeat } from '../shared/schedule.js';
@@ -345,7 +346,9 @@ const removingProject = new Set<string>();
 
 /** A project's menu: its color (a submenu) and taking it off the sidebar. A new chat has its own button on the row. */
 function projectMenuItems(id: string): RowMenuItem[] {
-  const color = projects.find(row => row.id === id)?.color ?? null;
+  const project = projects.find(row => row.id === id);
+  const color = project?.color ?? null;
+  const cloudOnly = project?.githubOnly === true;
   const link = projects.find(row => row.id === id)?.chatgpt;
   const shieldOff = projects.find(row => row.id === id)?.secretsShieldOff === true;
   const shieldEverywhere = deps.state()?.config.ui.secretsShield !== false;
@@ -395,7 +398,7 @@ function projectMenuItems(id: string): RowMenuItem[] {
       }))
     },
     // #1689: context for this project's chats only; a link, not the groups' folder, so the two never look alike.
-    {
+    ...(!cloudOnly ? [{
       action: 'related-folders', icon: 'i-related', label: () => t('Related folders…'),
       title: () => t('Other approved folders this work also uses'),
       run: () => {
@@ -404,7 +407,7 @@ function projectMenuItems(id: string): RowMenuItem[] {
           // The project's own ⋯ button in the tree or the Inbox layout (CodeRabbit on #2092).
           () => rowMenuButton(`project:${id}`));
       }
-    },
+    } satisfies RowMenuItem] : []),
     // #1797: on unless this project or Settings turned it off; Settings wins, so the switch waits there.
     {
       action: 'secrets-shield', icon: 'i-shield', toggle: true, checked: shieldEverywhere && !shieldOff,
@@ -2266,8 +2269,9 @@ function projectSortEntries(groupOf: typeof projectGroup = projectGroup): Array<
 
 /** The project row's hover text: its folder and, when it has some, its related folders (#1689). */
 function projectTooltip(project: LocalProject): string {
+  if (project.githubOnly) return `${project.github}\n${t('GitHub tool only. No local repository files.')}`;
   const related = (project.relatedFolders ?? []).map(folder => folder.split(/[\\/]/).filter(Boolean).pop() ?? folder);
-  return related.length ? `${project.path}\n${t('Related folders: {0}', [related.join(', ')])}` : project.path;
+  return [project.path, ...(project.github ? [project.github] : []), ...(related.length ? [t('Related folders: {0}', [related.join(', ')])] : [])].join('\n');
 }
 
 /**
@@ -2548,11 +2552,15 @@ function paintSessions(): void {
     heading.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown');
     const label = el('span', 'project-name', () => project?.name ?? t("Unavailable project"));
     ui(heading, 'title', () => project ? projectTooltip(project) : t("Unavailable project"));
-    heading.append(icon('i-folder'), label);
+    heading.append(icon(project?.githubOnly ? 'i-git-branch' : 'i-folder'), label);
     if (project?.remote) {
       // A folder on a server (#1469): the address is the hover text, the badge says how it is reached.
       const badge = el('span', 'project-badge', () => 'SSH');
       ui(badge, 'title', () => project.remote ? `${project.remote.host}${project.remote.port ? `:${project.remote.port}` : ''}` : '');
+      heading.append(badge);
+    } else if (project?.githubOnly) {
+      const badge = el('span', 'project-badge', () => 'GitHub');
+      ui(badge, 'title', () => t('GitHub tool only. No local repository files.'));
       heading.append(badge);
     }
     section.append(heading);
@@ -10227,6 +10235,22 @@ export function initChat(next: Deps): void {
     showAddedProject(project, sshDialogGeneration);
     offerChatgptProject(project, known, asked);
   }, async () => ({ asked: await chatgptProjectPicker.hasChoices(), known: new Set(projects.map(row => row.id)) }));
+  let githubProjectGeneration = 0;
+  const importDialogs = initProjectImportDialogs(api, {
+    githubAdded: project => showAddedProject(project, githubProjectGeneration),
+    chatgptSynced: result => {
+      if (result.created.length || result.updated.length) {
+        ++sessionsLoadGeneration;
+        const changes = [...result.created, ...result.updated];
+        const changedIds = new Set(changes.map(row => row.id));
+        projects = [...projects.filter(row => !changedIds.has(row.id)), ...changes];
+        for (const project of result.created) expandedProjects.add(project.id);
+        paintSessions();
+      }
+      toast(t('ChatGPT Projects synced: {0} new, {1} updated, {2} already present.',
+        [result.created.length, result.updated.length, result.skipped]));
+    }
+  });
   // A folder on this computer, or one on a server (#1469).
   $('addProject').addEventListener('click', event => {
     event.preventDefault();
@@ -10234,10 +10258,12 @@ export function initChat(next: Deps): void {
       owner: 'add-project',
       // The Inbox hides the Projects heading and opens this from its own add button: the menu sits there.
       anchor: () => $('chatList').querySelector<HTMLElement>('[data-inbox-control="add"]') ?? document.getElementById('addProject'),
-      label: () => t('Add a project folder'),
+      label: () => t('Add a project'),
       items: () => [
         { action: 'add-local-project', label: () => t('Folder on this computer…'), icon: 'i-folder', run: () => void addLocalProject() },
-        { action: 'add-ssh-project', label: () => t('Folder on a server (SSH)…'), icon: 'i-terminal', run: () => { sshDialogGeneration = selectionGeneration; sshProjectDialog.open(); } }
+        { action: 'add-ssh-project', label: () => t('Folder on a server (SSH)…'), icon: 'i-terminal', run: () => { sshDialogGeneration = selectionGeneration; sshProjectDialog.open(); } },
+        { action: 'add-github-project', label: () => t('GitHub repository…'), icon: 'i-git-branch', run: () => { githubProjectGeneration = selectionGeneration; importDialogs.openGithub(); } },
+        { action: 'sync-chatgpt-projects', label: () => t('Sync ChatGPT web Projects…'), icon: 'i-loop', separated: true, run: () => void importDialogs.openChatgpt() }
       ]
     });
   });

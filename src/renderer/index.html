@@ -1700,6 +1700,26 @@
         <div class="pet-delete-actions"><button class="btn" id="sshProjectCancel" type="button">Cancel</button><button class="btn btn-solid" id="sshProjectSubmit" type="submit">Test and add</button></div>
       </form>
     </dialog>
+    <dialog class="plugin-dialog github-project-dialog" id="githubProjectDialog" aria-labelledby="githubProjectTitle">
+      <div class="plugin-dialog-head"><h2 id="githubProjectTitle">Add a GitHub repository</h2><button class="btn" id="githubProjectClose" type="button">Close</button></div>
+      <form id="githubProjectForm" class="plugin-dialog-body">
+          <p>Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.</p>
+        <label class="plugin-field" for="githubProjectUrl"><span>GitHub repository URL</span><input id="githubProjectUrl" required autocomplete="off" spellcheck="false" translate="no" placeholder="https://github.com/owner/repo or git@github.com:owner/repo.git" /></label>
+        <p id="githubProjectError" class="plugin-error" role="alert" hidden></p>
+          <div class="pet-delete-actions"><button class="btn" id="githubProjectCancel" type="button">Cancel</button><button class="btn btn-solid" id="githubProjectSubmit" type="submit">Create cloud project</button></div>
+      </form>
+    </dialog>
+    <dialog class="plugin-dialog chatgpt-sync-dialog" id="chatgptSyncDialog" aria-labelledby="chatgptSyncTitle">
+      <div class="plugin-dialog-head"><h2 id="chatgptSyncTitle">Sync ChatGPT Projects</h2><button class="btn" id="chatgptSyncClose" type="button">Close</button></div>
+      <div class="plugin-dialog-body">
+        <p>Choose projects from the connected ChatGPT workspace. Sync all imports every discovered project.</p>
+        <p>Creates linked local folders without copying previous chats, uploads or instructions.</p>
+        <label class="plugin-field" for="chatgptSyncSearch"><span>Find Projects</span><input id="chatgptSyncSearch" type="search" autocomplete="off" placeholder="Search Projects" /></label>
+        <div id="chatgptSyncList" class="chatgpt-sync-list" role="group" aria-label="ChatGPT Projects to sync"></div>
+        <p id="chatgptSyncError" class="plugin-error" role="alert" hidden></p>
+        <div class="pet-delete-actions"><button class="btn" id="chatgptSyncCancel" type="button">Cancel</button><button class="btn" id="chatgptSyncSelected" type="button" disabled>Sync selected</button><button class="btn btn-solid" id="chatgptSyncAll" type="button" disabled>Sync all</button></div>
+      </div>
+    </dialog>
     <!-- #1826 (Haz's review): one schedule per chat, set from its ⋯ menu. Missed runs are skipped unless caught up. -->
     <dialog class="plugin-dialog schedule-dialog" id="scheduleDialog" aria-labelledby="scheduleTitle">
       <div class="plugin-dialog-head"><h2 id="scheduleTitle">Schedule</h2><button class="btn" id="scheduleClose" type="button">Close</button></div>

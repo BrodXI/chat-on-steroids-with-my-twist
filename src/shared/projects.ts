@@ -6,6 +6,12 @@ export interface LocalProject {
   id: string;
   name: string;
   path: string;
+  /** GitHub repository address. Never contains a credential. */
+  github?: string;
+  /** GitHub tool only: no checked-out repository, filesystem path or approved local root. */
+  githubOnly?: true;
+  /** Imported from the ChatGPT sidebar; subsequent explicit syncs can update its display name. */
+  syncedFromChatgpt?: true;
   /** A folder on a server (#1469); `path` is then its `host[:port]:/path` identity. */
   remote?: import('./types.js').RemoteFolder;
   /** Optional presentation-only sidebar accent. Never changes workspace or permission semantics. */
@@ -57,4 +63,11 @@ export interface ChatgptProjectChoice {
   name: string;
   /** The CoS project already linked to it; a ChatGPT Project belongs to one CoS project. */
   linkedTo: { id: string; name: string } | null;
+}
+
+/** Importing ChatGPT Projects only creates linked local workspaces, not copies of chats/files. */
+export interface ChatgptProjectSyncResult {
+  created: LocalProject[];
+  updated: LocalProject[];
+  skipped: number;
 }
