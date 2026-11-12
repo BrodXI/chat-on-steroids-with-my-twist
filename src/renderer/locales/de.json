@@ -1,4 +1,8 @@
 {
+  "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "Greife über das verbundene GitHub-Tool auf dieses Repository zu. CoS klont es nicht und erstellt keinen lokalen Ordner.",
+  "Create cloud project": "Cloud-Projekt erstellen",
+  "Creating project…": "Projekt wird erstellt…",
+  "GitHub tool only. No local repository files.": "Nur GitHub-Tool. Keine lokalen Repository-Dateien.",
   "Add a GitHub repository": "GitHub-Repository hinzufügen",
   "Clone into a new local folder. Private repositories use your existing Git credentials or SSH keys.": "Klonen in einen neuen lokalen Ordner. Private Repositories verwenden deine vorhandenen Git-Zugangsdaten oder SSH-Schlüssel.",
   "GitHub repository URL": "GitHub-Repository-URL",

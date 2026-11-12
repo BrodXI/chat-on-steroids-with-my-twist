@@ -1,4 +1,8 @@
 {
+  "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "연결된 GitHub 도구로 이 저장소에 액세스합니다. CoS는 복제하거나 로컬 폴더를 만들지 않습니다.",
+  "Create cloud project": "클라우드 프로젝트 만들기",
+  "Creating project…": "프로젝트 만드는 중…",
+  "GitHub tool only. No local repository files.": "GitHub 도구 전용. 로컬 저장소 파일 없음.",
   "Add a GitHub repository": "GitHub 저장소 추가",
   "Clone into a new local folder. Private repositories use your existing Git credentials or SSH keys.": "새 로컬 폴더에 복제합니다. 비공개 저장소는 기존 Git 자격 증명 또는 SSH 키를 사용합니다.",
   "GitHub repository URL": "GitHub 저장소 URL",

@@ -4,14 +4,21 @@ Open the **Projects +** menu (or the Inbox project **+**) to find both imports.
 
 ## Add a GitHub repository
 
-Choose **GitHub repository…**, enter a repository root URL such as
-`https://github.com/owner/repo` or `git@github.com:owner/repo.git`, then pick a local
-parent folder. CoS clones the repository into a new `repo` folder and adds it as a
-Project without automatically creating a new ChatGPT Project.
+Choose **GitHub repository…** and enter a repository root URL such as
+`https://github.com/owner/repo` or `git@github.com:owner/repo.git`.
+CoS creates a **GitHub-only Project** with instructions directing the agent to the
+connected GitHub tool for that exact repository. It does not automatically create
+a new native ChatGPT Project.
 
-- Git must be installed; private repos use your existing Git/SSH credentials.
+- No Git installation, local folder picker, disk checkout, repository cloning or
+  storage for repository files is required. Only the small CoS project catalog
+  record (name, canonical GitHub URL and ID) is saved locally.
+- Private repository access relies on the connected GitHub tool's permission,
+  not local Git credentials. If the tool is not connected, the agent must ask for
+  connection before claiming access.
 - CoS does not accept embedded passwords, non-GitHub hosts, or arbitrary Git transports.
-- The destination must not exist already. Clone failure does not register a Project.
+- Opening and moving chats into this Project does not set a local working folder.
+  Local filesystem, project-file and terminal actions do not act on the GitHub repo.
 - GitHub repositories are different from SSH server folders: a GitHub URL should use
   this action, not **Folder on a server (SSH)**.
 
@@ -35,5 +42,5 @@ folder for the new Project workspaces.
 - **Sync all** means all recently discovered Projects in the active ChatGPT workspace
   (up to the current catalog limit), not Projects in other accounts or workspaces.
 
-Both features require a person to choose a local folder. Neither expands tool
-permissions to arbitrary folders without the existing CoS approval mechanism.
+**Only ChatGPT web Project sync** requires choosing a local folder. GitHub-only
+Projects grant no local filesystem permissions or working directories.

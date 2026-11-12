@@ -1703,10 +1703,10 @@
     <dialog class="plugin-dialog github-project-dialog" id="githubProjectDialog" aria-labelledby="githubProjectTitle">
       <div class="plugin-dialog-head"><h2 id="githubProjectTitle">Add a GitHub repository</h2><button class="btn" id="githubProjectClose" type="button">Close</button></div>
       <form id="githubProjectForm" class="plugin-dialog-body">
-        <p>Clone into a new local folder. Private repositories use your existing Git credentials or SSH keys.</p>
+          <p>Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.</p>
         <label class="plugin-field" for="githubProjectUrl"><span>GitHub repository URL</span><input id="githubProjectUrl" required autocomplete="off" spellcheck="false" translate="no" placeholder="https://github.com/owner/repo or git@github.com:owner/repo.git" /></label>
         <p id="githubProjectError" class="plugin-error" role="alert" hidden></p>
-        <div class="pet-delete-actions"><button class="btn" id="githubProjectCancel" type="button">Cancel</button><button class="btn btn-solid" id="githubProjectSubmit" type="submit">Choose folder and clone</button></div>
+          <div class="pet-delete-actions"><button class="btn" id="githubProjectCancel" type="button">Cancel</button><button class="btn btn-solid" id="githubProjectSubmit" type="submit">Create cloud project</button></div>
       </form>
     </dialog>
     <dialog class="plugin-dialog chatgpt-sync-dialog" id="chatgptSyncDialog" aria-labelledby="chatgptSyncTitle">

@@ -6,8 +6,10 @@ export interface LocalProject {
   id: string;
   name: string;
   path: string;
-  /** Repository cloned through Projects. This is a public URL, never a credential. */
+  /** GitHub repository address. Never contains a credential. */
   github?: string;
+  /** GitHub tool only: no checked-out repository, filesystem path or approved local root. */
+  githubOnly?: true;
   /** Imported from the ChatGPT sidebar; subsequent explicit syncs can update its display name. */
   syncedFromChatgpt?: true;
   /** A folder on a server (#1469); `path` is then its `host[:port]:/path` identity. */

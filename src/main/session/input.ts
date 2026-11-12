@@ -14,7 +14,7 @@ import { getSession, findSessionByConversation, createSession, deleteSession, re
 import { noteEditReplacement } from './edits.js';
 import { userPromptText } from '../../shared/user-prompt.js';
 import type { SessionEvent } from '../../shared/session.js';
-import { assignSessionProject, getProject, getSessionProject, localProjectPath, projectWorkspace } from '../projects.js';
+import { assignSessionProject, getProject, getSessionProject, localProjectPath, projectFolderOrNull, validateProjectContext } from '../projects.js';
 import { isChatBlocked } from './blocked-chats.js';
 import { wakeBrowserWork } from '../browser-wake.js';
 import os from 'node:os';
@@ -1260,7 +1260,7 @@ export function enqueueInput(raw: InputArgs, finishOwner?: InputEntry['finishOwn
       ...(injectionOwner ? { toolTurnId: injectionOwner.turnId } : {}), ...(transportIntent ? { transportIntent } : {}),
       ...(!scheduled && requestedMode !== input.mode ? { requestedMode } : {}), ...(finishOwner ? { finishOwner } : {}), state: 'queued', owner: null, createdAt: Date.now(), conversationId: null };
     if (input.projectId) {
-      await projectWorkspace(input.projectId);
+      await validateProjectContext(input.projectId);
       if (input.sessionId) {
         const session = await getSession(input.sessionId);
         if (session?.projectId !== input.projectId) throw new Error('Message project does not match the session');
@@ -1271,7 +1271,7 @@ export function enqueueInput(raw: InputArgs, finishOwner?: InputEntry['finishOwn
       !finishOwner && !input.stages?.length;
     if (getConfig().ui.autoSelectSkills === true && authoredOrdinary && invokedSkills(input.text).length === 0) {
       const folder = input.sessionId ? await getSessionProject(input.sessionId)
-        : input.projectId ? await projectWorkspace(input.projectId) : null;
+        : input.projectId ? await projectFolderOrNull(input.projectId) : null;
       entry.autoSkills = await autoSelectManagedSkills(input.text, { projectPath: localProjectPath(folder) });
     }
     if (retryOpening) { entry.opening = true; entry.requestedSessionId = input.sessionId; }
@@ -2572,7 +2572,7 @@ export function claimBrowserInput(id: string, owner: string, conversationId: str
       if (refusal) return null;
     }
     if (entry.purpose === 'decision' && !decisionWaiters.has(id)) return null;
-    if (entry.projectId) await projectWorkspace(entry.projectId);
+    if (entry.projectId) await validateProjectContext(entry.projectId);
     if (entry.sessionId) {
       if (current.some((row) => !sameDelivery(entry, row) && row.sessionId === entry.sessionId && ['browser', 'tool'].includes(row.state))) return null;
       // A row the send check holds waits apart: it never holds back a later message (#1794).

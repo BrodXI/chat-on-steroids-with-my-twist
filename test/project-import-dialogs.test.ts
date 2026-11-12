@@ -24,7 +24,7 @@ async function dialogs() {
   const api = {
     chatgptProjectChoices: vi.fn(() => ok(choices)),
     syncChatgptProjects: vi.fn(() => ok({ created: [], updated: [], skipped: 3 })),
-    cloneGitHubProject: vi.fn(() => ok({ id: 'cloned', name: 'Repo', path: '/repo', createdAt: 1 }))
+    addGitHubProject: vi.fn(() => ok({ id: 'cloud', name: 'Repo', path: 'https://github.com/Owner/Repo', githubOnly: true, createdAt: 1 }))
   };
   const githubAdded = vi.fn(), chatgptSynced = vi.fn();
   const manager = initProjectImportDialogs(api as any, { githubAdded, chatgptSynced });
@@ -55,13 +55,14 @@ it('Sync all includes every listed project even when selected checkboxes differ'
   expect(api.syncChatgptProjects).toHaveBeenCalledWith(undefined);
 });
 
-it('clones a GitHub repo only after submitting its explicit URL', async () => {
+it('creates a cloud GitHub project from its URL without choosing a folder', async () => {
   const { api, manager, githubAdded } = await dialogs();
   manager.openGithub();
-  expect(api.cloneGitHubProject).not.toHaveBeenCalled();
+  expect(api.addGitHubProject).not.toHaveBeenCalled();
+  expect($('githubProjectSubmit').textContent).toMatch(/cloud project/i);
   $<HTMLInputElement>('githubProjectUrl').value = 'git@github.com:Owner/Repo.git';
   $('githubProjectForm').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
   await settle();
-  expect(api.cloneGitHubProject).toHaveBeenCalledWith('git@github.com:Owner/Repo.git');
+  expect(api.addGitHubProject).toHaveBeenCalledWith('git@github.com:Owner/Repo.git');
   expect(githubAdded).toHaveBeenCalledOnce();
 });

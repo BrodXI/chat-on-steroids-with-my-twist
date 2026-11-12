@@ -2,7 +2,7 @@ import type { AppApi } from '../preload/index.js';
 import type { ChatgptProjectChoice, ChatgptProjectSyncResult, LocalProject } from '../shared/projects.js';
 import { t } from './i18n.js';
 
-type ImportApi = Pick<AppApi, 'cloneGitHubProject' | 'chatgptProjectChoices' | 'syncChatgptProjects'>;
+type ImportApi = Pick<AppApi, 'addGitHubProject' | 'chatgptProjectChoices' | 'syncChatgptProjects'>;
 type Reply<T> = { ok: true; data: T } | { ok: false; error: string };
 
 const element = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -18,7 +18,7 @@ const errorText = (id: string, message: string | null) => {
   error.textContent = message ?? '';
 };
 
-/** Dedicated choices: GitHub clones a repository; ChatGPT sync links selected native Projects. */
+/** Dedicated choices: GitHub stores a cloud-only repository reference; ChatGPT sync links native Projects. */
 export function initProjectImportDialogs(api: ImportApi, callbacks: {
   githubAdded(project: LocalProject): void;
   chatgptSynced(result: ChatgptProjectSyncResult): void;
@@ -33,7 +33,7 @@ export function initProjectImportDialogs(api: ImportApi, callbacks: {
   const githubSetBusy = (busy: boolean) => {
     githubBusy = busy;
     githubSubmit.disabled = busy;
-    githubSubmit.textContent = busy ? t('Cloning…') : t('Choose folder and clone');
+    githubSubmit.textContent = busy ? t('Creating project…') : t('Create cloud project');
     for (const button of githubCancel) button.disabled = busy;
     githubUrl.disabled = busy;
   };
@@ -45,7 +45,7 @@ export function initProjectImportDialogs(api: ImportApi, callbacks: {
     errorText('githubProjectError', null);
     githubSetBusy(true);
     try {
-      const reply = await api.cloneGitHubProject(githubUrl.value.trim());
+      const reply = await api.addGitHubProject(githubUrl.value.trim());
       if (!reply.ok) { errorText('githubProjectError', reply.error); return; }
       if (reply.data) { closeModal(github); callbacks.githubAdded(reply.data); }
     } catch (error) {

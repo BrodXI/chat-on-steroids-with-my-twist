@@ -14,6 +14,7 @@ import { chatGroupsState, movedChatGroup, placeMovedChat } from './chat-groups.j
 import type { ChatGroupsState } from '../shared/chat-groups.js';
 import { logInfo } from './logger.js';
 import { chatgptProjectChoices, isListedChatgptProject } from './chatgpt-project-catalog.js';
+import { parseGitHubRepository } from './github-project.js';
 import { CHATGPT_PROJECT_ID, MAX_RELATED_FOLDERS, PROJECT_COLORS, type ChatgptProjectLink, type ChatgptProjectSyncResult, type LocalProject, type ProjectColor, type RelatedFolderView } from '../shared/projects.js';
 
 const at = z.number().finite().nonnegative();
@@ -28,13 +29,22 @@ const chatgptSchema = z.discriminatedUnion('state', [
 ]);
 const projectSchema = z.object({
   id: z.string().uuid(), name: z.string().min(1).max(160), path: z.string().min(1).max(32768),
-  github: z.string().url().max(300).optional(), syncedFromChatgpt: z.literal(true).optional(),
+  github: z.string().url().max(300).optional(), githubOnly: z.literal(true).optional(), syncedFromChatgpt: z.literal(true).optional(),
   color: z.enum(PROJECT_COLORS).optional(),
   createdAt: z.number().finite().nonnegative(), ungrouped: z.boolean().optional(), secretsShieldOff: z.boolean().optional(),
   chatgpt: chatgptSchema.optional(),
   remote: z.object({ host: z.string().min(1).max(255), port: z.number().int().min(1).max(65535).optional(), path: z.string().min(1).max(4096) }).optional(),
   // A damaged list is read as none rather than failing the whole catalog (#1689).
   relatedFolders: z.array(z.string().min(1).max(32768)).max(MAX_RELATED_FOLDERS).optional().catch(undefined)
+}).superRefine((row, context) => {
+  if (!row.githubOnly) return;
+  try {
+    if (!row.github || parseGitHubRepository(row.github).url !== row.github || row.path !== row.github || row.remote || row.relatedFolders?.length) {
+      context.addIssue({ code: 'custom', message: 'GitHub-only project must have a canonical GitHub URL and no local or server workspace' });
+    }
+  } catch {
+    context.addIssue({ code: 'custom', message: 'Invalid GitHub-only repository URL' });
+  }
 });
 const catalogSchema = z.array(projectSchema).max(200);
 let mutations: Promise<unknown> = Promise.resolve();
@@ -76,6 +86,33 @@ export function addProject(folderPath: string, options: { chatgpt?: 'later'; git
       ...(options.chatgpt === 'later' ? {} : { chatgpt: { state: 'requested', requestId: randomUUID(), updatedAt: Date.now() } as const }) };
     await writeDurableNow('projects', [...projects, project]);
     logInfo(`projects: project ${project.id} asks for a new ChatGPT Project`);
+    return project;
+  });
+  mutations = operation.catch(() => undefined);
+  return operation;
+}
+
+/** A cloud-only GitHub project. The only persistent data is the catalog's repo URL and identity.
+ * No Git process, folder picker, disk I/O or filesystem root approval is involved.
+ */
+export function addGitHubProject(repositoryUrl: string): Promise<LocalProject> {
+  const repository = parseGitHubRepository(repositoryUrl);
+  const operation = mutations.then(async () => {
+    const projects = await listProjects();
+    const existing = projects.find(row => row.githubOnly && row.github?.toLowerCase() === repository.url.toLowerCase());
+    if (existing) {
+      if (!existing.ungrouped) return existing;
+      const { ungrouped: _, ...restored } = existing;
+      await writeDurableNow('projects', projects.map(row => row.id === existing.id ? restored : row));
+      return restored;
+    }
+    if (projects.length >= 200) throw new Error('Project catalog limit reached');
+    const project: LocalProject = {
+      id: randomUUID(), name: repository.name, path: repository.url, github: repository.url,
+      githubOnly: true, createdAt: Date.now()
+    };
+    await writeDurableNow('projects', [...projects, project]);
+    logInfo(`projects: cloud-only GitHub project ${project.id} added`);
     return project;
   });
   mutations = operation.catch(() => undefined);
@@ -316,13 +353,27 @@ export function removeProject(id: string): Promise<LocalProject> {
 export async function assignSessionProject(sessionId: string, projectId: string): Promise<void> {
   const project = await getProject(projectId);
   if (!project) throw new Error('Project not found');
-  await resolveProject(project);
+  if (!project.githubOnly) await resolveProject(project);
   await bindSessionProject(sessionId, project.id);
+}
+/** Chat admission validates identity for GitHub-only projects, not a fictitious folder. */
+export async function validateProjectContext(projectId: string): Promise<void> {
+  const project = await getProject(projectId);
+  // An ungrouped project remains valid for its existing chats and queued messages.
+  if (!project) throw new Error('Project not found');
+  if (!project.githubOnly) await resolveProject(project);
 }
 export async function projectWorkspace(projectId: string): Promise<{ virtual: string; real: string }> {
   const project = await getProject(projectId);
   if (!project) throw new Error('Project not found');
+  if (project.githubOnly) throw new Error('This GitHub project has no local folder. Use the connected GitHub tool for repository access.');
   return resolveProject(project);
+}
+/** Resolve the workspace for folder-backed projects only. GitHub-only projects have no folder. */
+export async function projectFolderOrNull(projectId: string): Promise<{ virtual: string; real: string } | null> {
+  const project = await getProject(projectId);
+  if (!project) throw new Error('Project not found');
+  return project.githubOnly ? null : resolveProject(project);
 }
 async function resolveProject(project: LocalProject): Promise<{ virtual: string; real: string }> {
   if (project.remote) {
@@ -471,6 +522,7 @@ export async function getSessionProject(sessionId: string): Promise<{ virtual: s
   if (!session?.projectId) return null;
   const project = await getProject(session.projectId);
   if (!project) throw new Error('The session project is unavailable');
+  if (project.githubOnly) return null;
   return resolveProject(project);
 }
 /**

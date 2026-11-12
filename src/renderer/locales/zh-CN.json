@@ -1,4 +1,8 @@
 {
+  "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "使用已连接的 GitHub 工具访问此仓库。CoS 不会克隆仓库或创建本地文件夹。",
+  "Create cloud project": "创建云端项目",
+  "Creating project…": "正在创建项目…",
+  "GitHub tool only. No local repository files.": "仅使用 GitHub 工具，没有本地仓库文件。",
   "Add a GitHub repository": "添加 GitHub 仓库",
   "Clone into a new local folder. Private repositories use your existing Git credentials or SSH keys.": "将仓库克隆到新的本地文件夹。私有仓库使用你现有的 Git 凭据或 SSH 密钥。",
   "GitHub repository URL": "GitHub 仓库 URL",

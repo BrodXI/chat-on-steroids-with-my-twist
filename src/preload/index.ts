@@ -349,7 +349,7 @@ const api = {
   listProjects: () => call<LocalProject[]>('projects:list'),
   // `chatgpt: 'later'`: the person picks a new or an existing ChatGPT Project next (#1756).
   addProject: (options?: { chatgpt?: 'later' }) => call<LocalProject | null>('projects:add', options ?? {}),
-  cloneGitHubProject: (url: string) => call<LocalProject | null>('projects:github-clone', { url }),
+  addGitHubProject: (url: string) => call<LocalProject>('projects:github-add', { url }),
   syncChatgptProjects: (ids?: string[]) => call<ChatgptProjectSyncResult | null>('projects:chatgpt-sync', ids ? { ids } : {}),
   addRemoteProject: (address: string, folder: string, options?: { chatgpt?: 'later' }) => call<LocalProject>('projects:addRemote', { address, folder, ...(options ?? {}) }),
   retryChatgptProject: (id: string) => call<LocalProject | null>('projects:chatgpt-retry', { id }),

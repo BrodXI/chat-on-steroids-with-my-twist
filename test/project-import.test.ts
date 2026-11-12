@@ -1,13 +1,14 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { defaultConfig, initConfigPath, saveConfig } from '../src/main/config.js';
 import { initDurableStore, resetDurableForTests } from '../src/main/durable.js';
-import { initSessionStore, resetSessionStoreForTests } from '../src/main/session/store.js';
+import { createSession, initSessionStore, resetSessionStoreForTests } from '../src/main/session/store.js';
 import { noteChatgptProjects, chatgptProjectChoices } from '../src/main/chatgpt-project-catalog.js';
-import { getProject, listProjects, removeProject, syncChatgptProjects } from '../src/main/projects.js';
-import { cloneGitHubProject, parseGitHubRepository } from '../src/main/github-project.js';
+import { addGitHubProject, assignSessionProject, getProject, getSessionProject, listProjects, projectWorkspace, removeProject, syncChatgptProjects, validateProjectContext } from '../src/main/projects.js';
+import { parseGitHubRepository } from '../src/main/github-project.js';
+import { prepareSessionPrompt, prepareSkillFollowup } from '../src/main/session/prompt.js';
 import { validateNewRoot } from '../src/main/sandbox.js';
 
 const id = (digit: string) => `g-p-${digit.repeat(32)}`;
@@ -94,10 +95,10 @@ it('does not silently re-add a project deliberately removed from the sidebar', a
 
 it('normalizes only GitHub HTTPS and SSH repository roots without credentials', () => {
   expect(parseGitHubRepository('https://github.com/Owner/re.po.git')).toEqual({
-    url: 'https://github.com/Owner/re.po', cloneUrl: 'https://github.com/Owner/re.po.git', name: 're.po'
+    url: 'https://github.com/Owner/re.po', name: 're.po'
   });
   expect(parseGitHubRepository('git@github.com:Owner/Repo.git')).toEqual({
-    url: 'https://github.com/Owner/Repo', cloneUrl: 'git@github.com:Owner/Repo.git', name: 'Repo'
+    url: 'https://github.com/Owner/Repo', name: 'Repo'
   });
   for (const bad of [
     'file:///tmp/repo', 'ext::evil', 'https://user:token@github.com/Owner/Repo',
@@ -107,33 +108,48 @@ it('normalizes only GitHub HTTPS and SSH repository roots without credentials', 
   ]) expect(() => parseGitHubRepository(bad)).toThrow();
 });
 
-it('clones into a unique staging folder then adds a GitHub-linked project', async () => {
+it('creates a GitHub tool-only project without cloning, approving roots, or touching repository files', async () => {
   await setup();
-  const fakeGit = vi.fn(async (_cwd: string, args: string[]) => {
-    const staging = path.join(approved, args.at(-1)!);
-    await fs.mkdir(path.join(staging, '.git'), { recursive: true });
-    return { code: 0, stdout: Buffer.alloc(0), stderr: '' };
-  });
-  const project = await cloneGitHubProject(approved, 'git@github.com:Owner/Repo.git', { git: fakeGit });
+  const before = await fs.readdir(approved);
+  const project = await addGitHubProject('git@github.com:Owner/Repo.git');
   expect(project.github).toBe('https://github.com/Owner/Repo');
+  expect(project.githubOnly).toBe(true);
   expect(project.chatgpt).toBeUndefined();
-  expect(project.path).toBe(path.join(approved, 'Repo'));
-  expect((await fs.stat(path.join(project.path, '.git'))).isDirectory()).toBe(true);
-  const args = fakeGit.mock.calls[0]![1];
-  expect(args).toContain('--');
-  expect(args).toContain('git@github.com:Owner/Repo.git');
-  expect((await fs.readdir(approved)).filter(name => name.startsWith('.cos-clone-'))).toEqual([]);
-  await expect(cloneGitHubProject(approved, 'https://github.com/Owner/Repo', { git: fakeGit })).rejects.toThrow(/already exists/);
-  expect(fakeGit).toHaveBeenCalledTimes(1);
+  expect(project.path).toBe(project.github);
+  expect(await fs.readdir(approved)).toEqual(before);
+  expect((await addGitHubProject('https://github.com/owner/repo')).id).toBe(project.id);
+  expect(await listProjects()).toHaveLength(1);
+  await validateProjectContext(project.id);
+  await expect(projectWorkspace(project.id)).rejects.toThrow(/no local folder/);
+  const session = await createSession({ title: 'Cloud repo', conversationId: 'cloud-test-chat' });
+  await assignSessionProject(session.id, project.id);
+  expect(await getSessionProject(session.id)).toBeNull();
+  const opening = await prepareSessionPrompt('Read the README', { sessionId: session.id });
+  const directlySelected = await prepareSessionPrompt('Open issues', { projectId: project.id });
+  expect(directlySelected).toContain('GitHub-only CoS project: https://github.com/Owner/Repo');
+  expect(opening).toContain('GitHub-only CoS project: https://github.com/Owner/Repo');
+  expect(opening).toContain('connected GitHub tool/plugin');
+  expect(opening).toContain('Never clone, download, or use the local filesystem');
+  expect(opening).not.toContain('Selected project directory:');
+  expect((await prepareSkillFollowup('Continue', 'Continue', undefined, { sessionId: session.id }, true))).toContain('GitHub-only CoS project');
+  expect(await fs.readdir(approved)).toEqual(before);
 });
 
-it('failed clones clean staging directories and never enter the project catalog', async () => {
+it('refuses invalid repository URLs and does not create projects or folders', async () => {
   await setup();
-  const fakeGit = vi.fn(async (_cwd: string, args: string[]) => {
-    await fs.mkdir(path.join(approved, args.at(-1)!), { recursive: true });
-    return { code: 128, stdout: Buffer.alloc(0), stderr: 'Repository not found' };
-  });
-  await expect(cloneGitHubProject(approved, 'https://github.com/Owner/Repo', { git: fakeGit })).rejects.toThrow(/Repository not found/);
+  expect(() => addGitHubProject('https://user:password@github.com/Owner/Repo')).toThrow();
+  expect(() => addGitHubProject('https://notgithub.example/Owner/Repo')).toThrow();
   expect(await fs.readdir(approved)).toEqual([]);
   expect(await listProjects()).toEqual([]);
+});
+
+it('restores an ungrouped GitHub project without creating a second record', async () => {
+  await setup();
+  const project = await addGitHubProject('https://github.com/Owner/Repo');
+  await removeProject(project.id);
+  const restored = await addGitHubProject('https://github.com/owner/repo.git');
+  expect(restored.id).toBe(project.id);
+  expect(restored.ungrouped).toBeUndefined();
+  expect(await listProjects()).toHaveLength(1);
+  expect(await fs.readdir(approved)).toEqual([]);
 });

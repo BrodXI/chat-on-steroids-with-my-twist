@@ -346,7 +346,9 @@ const removingProject = new Set<string>();
 
 /** A project's menu: its color (a submenu) and taking it off the sidebar. A new chat has its own button on the row. */
 function projectMenuItems(id: string): RowMenuItem[] {
-  const color = projects.find(row => row.id === id)?.color ?? null;
+  const project = projects.find(row => row.id === id);
+  const color = project?.color ?? null;
+  const cloudOnly = project?.githubOnly === true;
   const link = projects.find(row => row.id === id)?.chatgpt;
   const shieldOff = projects.find(row => row.id === id)?.secretsShieldOff === true;
   const shieldEverywhere = deps.state()?.config.ui.secretsShield !== false;
@@ -396,7 +398,7 @@ function projectMenuItems(id: string): RowMenuItem[] {
       }))
     },
     // #1689: context for this project's chats only; a link, not the groups' folder, so the two never look alike.
-    {
+    ...(!cloudOnly ? [{
       action: 'related-folders', icon: 'i-related', label: () => t('Related folders…'),
       title: () => t('Other approved folders this work also uses'),
       run: () => {
@@ -405,7 +407,7 @@ function projectMenuItems(id: string): RowMenuItem[] {
           // The project's own ⋯ button in the tree or the Inbox layout (CodeRabbit on #2092).
           () => rowMenuButton(`project:${id}`));
       }
-    },
+    } satisfies RowMenuItem] : []),
     // #1797: on unless this project or Settings turned it off; Settings wins, so the switch waits there.
     {
       action: 'secrets-shield', icon: 'i-shield', toggle: true, checked: shieldEverywhere && !shieldOff,
@@ -2267,6 +2269,7 @@ function projectSortEntries(groupOf: typeof projectGroup = projectGroup): Array<
 
 /** The project row's hover text: its folder and, when it has some, its related folders (#1689). */
 function projectTooltip(project: LocalProject): string {
+  if (project.githubOnly) return `${project.github}\n${t('GitHub tool only. No local repository files.')}`;
   const related = (project.relatedFolders ?? []).map(folder => folder.split(/[\\/]/).filter(Boolean).pop() ?? folder);
   return [project.path, ...(project.github ? [project.github] : []), ...(related.length ? [t('Related folders: {0}', [related.join(', ')])] : [])].join('\n');
 }
@@ -2549,11 +2552,15 @@ function paintSessions(): void {
     heading.setAttribute('aria-keyshortcuts', 'Alt+ArrowUp Alt+ArrowDown');
     const label = el('span', 'project-name', () => project?.name ?? t("Unavailable project"));
     ui(heading, 'title', () => project ? projectTooltip(project) : t("Unavailable project"));
-    heading.append(icon('i-folder'), label);
+    heading.append(icon(project?.githubOnly ? 'i-git-branch' : 'i-folder'), label);
     if (project?.remote) {
       // A folder on a server (#1469): the address is the hover text, the badge says how it is reached.
       const badge = el('span', 'project-badge', () => 'SSH');
       ui(badge, 'title', () => project.remote ? `${project.remote.host}${project.remote.port ? `:${project.remote.port}` : ''}` : '');
+      heading.append(badge);
+    } else if (project?.githubOnly) {
+      const badge = el('span', 'project-badge', () => 'GitHub');
+      ui(badge, 'title', () => t('GitHub tool only. No local repository files.'));
       heading.append(badge);
     }
     section.append(heading);

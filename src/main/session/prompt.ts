@@ -2,7 +2,7 @@ import path from 'node:path';
 import { readFileStream } from '../codex/filesystem.js';
 import { effectiveCapabilities, getConfig } from '../config.js';
 import { currentCoreInstructions } from '../mcp/instructions.js';
-import { getSessionProject, localProjectPath, projectWorkspace, relatedFolderContext, serverRootOf } from '../projects.js';
+import { getProject, getSessionProject, localProjectPath, projectFolderOrNull, relatedFolderContext, serverRootOf } from '../projects.js';
 import { getSession } from './store.js';
 import { fsForRoot } from '../remote/project-fs.js';
 import { resolvePath } from '../sandbox.js';
@@ -19,6 +19,8 @@ type PromptScope = { sessionId?: string | null; projectId?: string | null; autoS
 };
 export type PromptLimits = { maxChars: number; maxBytes: number };
 type ProjectInstructions = { directory: string; text: string; truncated: boolean;
+  /** GitHub-only Project with no workspace or AGENTS.md. Its repo is accessed through a tool. */
+  github?: string;
   /** Related folders (#1689): available ones only, by their approved names. Context, not a working directory. */
   related?: string[];
   /** A next-turn project note (#1919): an empty list is said, so a folder named earlier no longer applies. */
@@ -27,7 +29,7 @@ const limits: PromptLimits = { maxChars: MAX_CHATGPT_MESSAGE_CHARS, maxBytes: In
 const cutNotice = '\n\n[Cut off because of the message limit. Read AGENTS.md yourself for the remaining instructions.]';
 
 const promptFolder = (scope: PromptScope) => scope.sessionId ? getSessionProject(scope.sessionId)
-  : scope.projectId ? projectWorkspace(scope.projectId) : Promise.resolve(null);
+  : scope.projectId ? projectFolderOrNull(scope.projectId) : Promise.resolve(null);
 /** The related folders of this chat's project (#1689), read when the message is prepared, so never stale. */
 const scopeProject = async (scope: PromptScope): Promise<string | null> =>
   (scope.sessionId ? (await getSession(scope.sessionId))?.projectId : scope.projectId) ?? null;
@@ -46,9 +48,14 @@ export function relatedFoldersLine(related: readonly string[]): string {
 /** One selected folder, never cwd inference, global discovery or a recursive document scan. */
 async function projectInstructions(scope: PromptScope): Promise<ProjectInstructions | null> {
   if (!scope.sessionId && !scope.projectId) return null;
+  const selectedId = await scopeProject(scope);
+  if (selectedId) {
+    const selected = await getProject(selectedId);
+    if (selected?.githubOnly && selected.github) return { directory: '', text: '', truncated: false, github: selected.github };
+  }
   // Existing sessions own their project; a caller-provided project cannot replace that binding.
   const folder = scope.sessionId ? await getSessionProject(scope.sessionId)
-    : await projectWorkspace(scope.projectId!);
+    : await projectFolderOrNull(scope.projectId!);
   if (!folder) return null;
   const directoryOnly = { directory: folder.virtual, text: '', truncated: false };
   if (!effectiveCapabilities(getConfig()).read) return directoryOnly;
@@ -75,14 +82,14 @@ async function projectInstructions(scope: PromptScope): Promise<ProjectInstructi
     const text = new TextDecoder('utf-8', { fatal: true }).decode(data.subarray(0, budget), { stream: bytes > budget });
     if (text.includes('\0')) throw new Error('AGENTS.md must be a UTF-8 text file');
     // Permission/path changes during the asynchronous read cannot publish another folder's text.
-    const current = scope.sessionId ? await getSessionProject(scope.sessionId) : await projectWorkspace(scope.projectId!);
+    const current = scope.sessionId ? await getSessionProject(scope.sessionId) : await projectFolderOrNull(scope.projectId!);
     const checked = await resolvePath(getConfig().roots, filename, where);
     if (!current || current.real !== folder.real || checked.real !== resolved.real || !effectiveCapabilities(getConfig()).read)
       throw new Error('Project instructions changed location or permission while being read');
     return { directory: current.virtual, text: text.trim() ? text : '', truncated: bytes > budget };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      const current = scope.sessionId ? await getSessionProject(scope.sessionId) : await projectWorkspace(scope.projectId!);
+      const current = scope.sessionId ? await getSessionProject(scope.sessionId) : await projectFolderOrNull(scope.projectId!);
       if (current?.real === folder.real) return { ...directoryOnly, directory: current.virtual };
     }
     // Do not expose native filesystem paths through the browser bridge's error response.
@@ -94,7 +101,9 @@ async function projectInstructions(scope: PromptScope): Promise<ProjectInstructi
 export function fitSessionPrompt(text: string, core: string, agents: ProjectInstructions | null = null, budget = limits, skills: SelectedSkill[] = [], workingDirectory?: string): string {
   const fits = (value: string): boolean => value.length <= Math.min(MAX_CHATGPT_MESSAGE_CHARS, budget.maxChars) &&
     Buffer.byteLength(value, 'utf8') <= budget.maxBytes;
-  const projectHeader = workingDirectory
+  const projectHeader = agents?.github
+    ? `GitHub-only CoS project: ${agents.github}\nThis project does not have a local checkout or an approved filesystem workspace. Access this exact repository through the connected GitHub tool/plugin for reading, editing, commits and pull requests. Never clone, download, or use the local filesystem/terminal as a substitute for accessing this repository. Do not claim GitHub access unless the tool is connected; if unavailable, ask to connect it. Do not switch to a different repository without the user's authorization.`
+    : workingDirectory
     ? `Worker working directory (allocated Git worktree): ${workingDirectory}\nUse this directory as your default working directory and keep worker task changes in this allocated worktree. The source project's AGENTS.md supplies instructions only; never use the source project as your working directory. This worktree grants no additional filesystem permissions.`
     : agents ? `Selected project directory: ${agents.directory}\nUse this directory as your default working directory and keep task work there unless the user or task requires another approved location. This project association grants no additional filesystem permissions.${agents.relatedNote && !agents.related?.length
       ? '\nRelated folders: none. A related folder named earlier in this chat no longer applies.' : relatedFoldersLine(agents.related ?? [])}` : '';
@@ -145,6 +154,7 @@ export function fitSessionPrompt(text: string, core: string, agents: ProjectInst
 /** Opening normal/worker messages only. Callers own first-message eligibility;
  * follow-ups, helpers, handoff requests and resumed bootstraps never call this. */
 export async function prepareSessionPrompt(text: string, scope: PromptScope = {}, budget = limits, authored = text): Promise<string> {
+  const selectedProject = await scopeProject(scope);
   const folder = await promptFolder(scope);
   const skillScope = { projectPath: localProjectPath(folder) };
   // Automatic routing has already frozen its decision from the app's published Skill catalog at
@@ -159,6 +169,7 @@ export async function prepareSessionPrompt(text: string, scope: PromptScope = {}
   // folders are the person's context for the project's chats, not a worker's (CodeRabbit on #2053).
   const agents = found && !scope.workingDirectory && !scope.subAgent ? { ...found, related: await relatedFolders(scope) } : found;
   if ((await promptFolder(scope))?.real !== folder?.real) throw new Error('The selected project changed during Skill preparation');
+  if (await scopeProject(scope) !== selectedProject) throw new Error('The selected project changed during Skill preparation');
   return fitSessionPrompt(text, core, agents, budget, skills, scope.workingDirectory);
 }
 
@@ -168,9 +179,12 @@ export async function prepareSessionPrompt(text: string, scope: PromptScope = {}
  * project's folder line once, the same line a new chat there starts with.
  */
 export async function prepareSkillFollowup(text: string, authored: string, budget = limits, scope: PromptScope = {}, projectNote = false): Promise<string> {
+  const selectedProject = await scopeProject(scope);
   const folder = await promptFolder(scope);
   const skills = await selectedSkillInstructions(authored, { projectPath: localProjectPath(folder) }, undefined, scope.autoSkills);
-  const note = projectNote && folder ? { directory: folder.virtual, text: '', truncated: false, related: await relatedFolders(scope), relatedNote: true } : null;
+  const note = projectNote && folder ? { directory: folder.virtual, text: '', truncated: false, related: await relatedFolders(scope), relatedNote: true }
+    : projectNote ? await projectInstructions(scope) : null;
   if ((await promptFolder(scope))?.real !== folder?.real) throw new Error('The selected project changed during Skill preparation');
+  if (await scopeProject(scope) !== selectedProject) throw new Error('The selected project changed during Skill preparation');
   return skills.length || note ? fitSessionPrompt(text, '', note, budget, skills) : text;
 }

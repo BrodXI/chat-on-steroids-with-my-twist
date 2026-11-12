@@ -1,4 +1,8 @@
 {
+  "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "Bu depoya bağlı GitHub aracıyla eriş. CoS depoyu klonlamaz veya yerel klasör oluşturmaz.",
+  "Create cloud project": "Bulut projesi oluştur",
+  "Creating project…": "Proje oluşturuluyor…",
+  "GitHub tool only. No local repository files.": "Yalnızca GitHub aracı. Yerel depo dosyası yok.",
   "Add a GitHub repository": "GitHub deposu ekle",
   "Clone into a new local folder. Private repositories use your existing Git credentials or SSH keys.": "Yeni bir yerel klasöre klonla. Özel depolar mevcut Git kimlik bilgilerini veya SSH anahtarlarını kullanır.",
   "GitHub repository URL": "GitHub deposu URL'si",

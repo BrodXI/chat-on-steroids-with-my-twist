@@ -1,4 +1,8 @@
 {
+  "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "Dùng công cụ GitHub đã kết nối để truy cập kho này. CoS sẽ không sao chép kho hoặc tạo thư mục cục bộ.",
+  "Create cloud project": "Tạo dự án đám mây",
+  "Creating project…": "Đang tạo dự án…",
+  "GitHub tool only. No local repository files.": "Chỉ dùng công cụ GitHub. Không có tệp kho lưu trữ cục bộ.",
   "Add a GitHub repository": "Thêm kho lưu trữ GitHub",
   "Clone into a new local folder. Private repositories use your existing Git credentials or SSH keys.": "Sao chép vào một thư mục cục bộ mới. Kho riêng tư sử dụng thông tin đăng nhập Git hoặc khóa SSH hiện có của bạn.",
   "GitHub repository URL": "URL kho lưu trữ GitHub",

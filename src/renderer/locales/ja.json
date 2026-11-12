@@ -1,4 +1,8 @@
 {
+  "Use the connected GitHub tool to access this repository. CoS will not clone it or create a local folder.": "接続済みの GitHub ツールでこのリポジトリにアクセスします。CoS はクローンやローカルフォルダーの作成を行いません。",
+  "Create cloud project": "クラウドプロジェクトを作成",
+  "Creating project…": "プロジェクトを作成中…",
+  "GitHub tool only. No local repository files.": "GitHub ツールのみ。ローカルのリポジトリファイルはありません。",
   "Add a GitHub repository": "GitHub リポジトリを追加",
   "Clone into a new local folder. Private repositories use your existing Git credentials or SSH keys.": "新しいローカルフォルダーにクローンします。非公開リポジトリでは既存の Git 認証情報または SSH キーを使用します。",
   "GitHub repository URL": "GitHub リポジトリ URL",
