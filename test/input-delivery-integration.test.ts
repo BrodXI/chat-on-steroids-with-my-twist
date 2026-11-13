@@ -101,8 +101,14 @@ it.each([
     silenceBoundary: { turnId } });
   if (!timedOut) {
     // An unchanged error gets a bounded grace window; no instant second send.
-    expect(rows[0]?.silenceBoundary?.listenUntil).toBeGreaterThan(Date.now());
+    const due = rows[0]?.silenceBoundary?.listenUntil!;
+    expect(due).toBeGreaterThan(Date.now());
     expect((await input.pendingBrowserInputs()).some(row => row.id === rows[0]!.id)).toBe(false);
+    // After that quiet window, the same guarded ticket must become eligible.
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(due + 1);
+    try {
+      expect((await input.pendingBrowserInputs()).some(row => row.id === rows[0]!.id)).toBe(true);
+    } finally { clock.mockRestore(); }
   }
   // Replayed acknowledgements must not mint another recovery prompt.
   await post(`/status?repaired=${repair.token}&repairAction=reloaded`, { openConversations: [conversationId] });
@@ -155,7 +161,8 @@ it('retires a delayed stall recovery when the original turn resumes making progr
   const row = (await input.listInputs()).find(row => row.sessionId === session.id && row.recovery)!;
   expect(row.recovery?.postReloadError).toBe(true);
   await post('/events', { conversationId, events: [
-    { kind: 'assistant_message', turnId, messageId: randomUUID(), text: 'Continuing now', state: 'streaming', time: at + 3 }
+    { kind: 'assistant_message', turnId, messageId: randomUUID(), providerMessageId: randomUUID(),
+      text: 'Continuing now', state: 'streaming', activeNow: true, time: at + 3 }
   ] });
   expect((await input.pendingBrowserInputs()).some(item => item.id === row.id)).toBe(false);
   expect((await input.listInputs()).find(item => item.id === row.id)?.state).toBe('cancelled');
