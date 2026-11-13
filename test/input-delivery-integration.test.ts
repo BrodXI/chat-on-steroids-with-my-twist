@@ -75,8 +75,9 @@ beforeEach(async () => {
 
 it.each([
   ['Message delivery timed out. Please try again.', true],
-  ['Connection interrupted. Waiting for the complete answer', false]
-] as const)('only queues a tool-free recovery prompt after a confirmed reload for %s', async (errorText, timedOut) => {
+  ['Connection interrupted. Waiting for the complete answer', false],
+  ['No visible progress for ten minutes. The app could not confirm that this turn finished.', false]
+] as const)('reloads first, then queues a guarded recovery prompt for %s', async (errorText, timedOut) => {
   await saveConfig({ ...defaultConfig(), ui: { ...defaultConfig().ui, autoContinue: true } });
   const conversationId = randomUUID(), turnId = randomUUID(), questionId = randomUUID();
   const session = await createSession({ title: 'Post-reload delivery timeout', conversationId });
@@ -94,19 +95,77 @@ it.each([
   if (repair.requiresClaim) expect((await post('/repairs/claim', { token: repair.token })).body.allowed).toBe(true);
   await post(`/status?repaired=${repair.token}&repairAction=reloaded`, { openConversations: [conversationId] });
   const rows = (await input.listInputs()).filter(row => row.sessionId === session.id && row.recovery);
-  expect(rows).toHaveLength(timedOut ? 1 : 0);
-  if (timedOut) {
-    expect(rows[0]).toMatchObject({ state: 'queued', recovery: { questionId, deliveryTimeout: true }, silenceBoundary: { turnId } });
-    // Replayed acknowledgements must not mint another recovery prompt.
-    await post(`/status?repaired=${repair.token}&repairAction=reloaded`, { openConversations: [conversationId] });
-    expect((await input.listInputs()).filter(row => row.sessionId === session.id && row.recovery)).toHaveLength(1);
-    // A late canonical answer invalidates the unsent Continue.
-    await post('/events', { conversationId, events: [
-      { kind: 'assistant_message', messageId: randomUUID(), turnId, text: 'Finished', state: 'final', final: true, time: at + 3 },
-      { kind: 'turn_end', turnId, outcome: 'completed', time: at + 4 }
-    ] });
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({ state: 'queued',
+    recovery: { questionId, ...(timedOut ? { deliveryTimeout: true } : { postReloadError: true }) },
+    silenceBoundary: { turnId } });
+  if (!timedOut) {
+    // An unchanged error gets a bounded grace window; no instant second send.
+    const due = rows[0]?.silenceBoundary?.listenUntil!;
+    expect(due).toBeGreaterThan(Date.now());
     expect((await input.pendingBrowserInputs()).some(row => row.id === rows[0]!.id)).toBe(false);
+    // After that quiet window, the same guarded ticket must become eligible.
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(due + 1);
+    try {
+      expect((await input.pendingBrowserInputs()).some(row => row.id === rows[0]!.id)).toBe(true);
+    } finally { clock.mockRestore(); }
   }
+  // Replayed acknowledgements must not mint another recovery prompt.
+  await post(`/status?repaired=${repair.token}&repairAction=reloaded`, { openConversations: [conversationId] });
+  expect((await input.listInputs()).filter(row => row.sessionId === session.id && row.recovery)).toHaveLength(1);
+  // A late canonical answer invalidates the unsent Continue for every error type.
+  await post('/events', { conversationId, events: [
+    { kind: 'assistant_message', messageId: randomUUID(), turnId, text: 'Finished', state: 'final', final: true, time: at + 3 },
+    { kind: 'turn_end', turnId, outcome: 'completed', time: at + 4 }
+  ] });
+  expect((await input.pendingBrowserInputs()).some(row => row.id === rows[0]!.id)).toBe(false);
+});
+
+it('does not prompt after the browser preserves an already recovered page', async () => {
+  await saveConfig({ ...defaultConfig(), ui: { ...defaultConfig().ui, autoContinue: true } });
+  const conversationId = randomUUID(), turnId = randomUUID();
+  const session = await createSession({ title: 'Recovered without a reload', conversationId });
+  const at = Date.now();
+  await post('/events', { conversationId, events: [
+    { kind: 'user_message', messageId: randomUUID(), text: 'Complete the work', time: at },
+    { kind: 'turn_start', turnId, time: at + 1 },
+    { kind: 'chat_error', turnId,
+      text: 'No visible progress for ten minutes. The app could not confirm that this turn finished.',
+      recoverable: true, time: at + 2 }
+  ] });
+  const repair = (await post('/status', { openConversations: [conversationId] })).body.repairs
+    .find((row: any) => row.conversationId === conversationId && row.reason === 'assistant-error');
+  expect(repair).toBeDefined();
+  if (repair.requiresClaim) expect((await post('/repairs/claim', { token: repair.token })).body.allowed).toBe(true);
+  await post(`/status?repaired=${repair.token}&repairAction=preserved`, { openConversations: [conversationId] });
+  expect((await input.listInputs()).filter(row => row.sessionId === session.id && row.recovery)).toHaveLength(0);
+});
+
+it('retires a delayed stall recovery when the original turn resumes making progress', async () => {
+  await saveConfig({ ...defaultConfig(), ui: { ...defaultConfig().ui, autoContinue: true } });
+  const conversationId = randomUUID(), turnId = randomUUID();
+  const session = await createSession({ title: 'Stall resumed after reload', conversationId });
+  const at = Date.now();
+  await post('/events', { conversationId, events: [
+    { kind: 'user_message', messageId: randomUUID(), text: 'Complete the work', time: at },
+    { kind: 'turn_start', turnId, time: at + 1 },
+    { kind: 'chat_error', turnId,
+      text: 'No visible progress for ten minutes. The app could not confirm that this turn finished.',
+      recoverable: true, time: at + 2 }
+  ] });
+  const repair = (await post('/status', { openConversations: [conversationId] })).body.repairs
+    .find((row: any) => row.conversationId === conversationId && row.reason === 'assistant-error');
+  expect(repair).toBeDefined();
+  if (repair.requiresClaim) expect((await post('/repairs/claim', { token: repair.token })).body.allowed).toBe(true);
+  await post(`/status?repaired=${repair.token}&repairAction=reloaded`, { openConversations: [conversationId] });
+  const row = (await input.listInputs()).find(row => row.sessionId === session.id && row.recovery)!;
+  expect(row.recovery?.postReloadError).toBe(true);
+  await post('/events', { conversationId, events: [
+    { kind: 'assistant_message', turnId, messageId: randomUUID(), providerMessageId: randomUUID(),
+      text: 'Continuing now', state: 'streaming', activeNow: true, time: at + 3 }
+  ] });
+  expect((await input.pendingBrowserInputs()).some(item => item.id === row.id)).toBe(false);
+  expect((await input.listInputs()).find(item => item.id === row.id)?.state).toBe('cancelled');
 });
 
 it('does not queue a timeout recovery prompt over an authored message still awaiting delivery', async () => {

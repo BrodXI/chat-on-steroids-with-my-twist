@@ -11484,28 +11484,35 @@ async function confirmRepair(token: string, action: 'reloaded' | 'reopened' | 'r
         // Charge the original question, never the replacement document seen at ACK time.
         if (repair.assistantSource) turnRepairSpent.set(conversationId,
           { sessionId: repair.sessionId, turnKey: repair.assistantSource.key, token: repair.token, at: Date.now() });
-        // Unlike a generic stream interruption, an explicit delivery timeout requests a
-        // post-reload Continue even if the old MCP-backed silence grant has expired.
-        // The durable outbox still rejects pending authored sends, newer questions, live
-        // work, completed answers and attempts to replay an already authorized Send.
+        // Any explicitly recoverable assistant error, including a ten-minute stall,
+        // earns one durable Continue only *after* its reload is confirmed. Ordinary
+        // errors wait for a quiet recovery window before Send; the delivery-timeout
+        // case retains its existing immediate (but native-readiness-gated) pickup.
+        // The outbox still fences ambiguous sends, a later final, a new question,
+        // new work, or user Stop. Provider history limits never reach this path.
         const source = repair.assistantSource;
-        if (source?.deliveryTimeout && source.turnId && !source.completed &&
+        if ((action === 'reloaded' || action === 'reopened' || action === 'resumed') &&
+            source?.turnId && !source.completed &&
             recoveryInputAllowed(repair.sessionId, conversationId) &&
             await assistantRepairCurrent(conversationId, repair)) {
           const selected = (await getSession(repair.sessionId))?.selectedModel;
           const pro = selected?.conversationId === conversationId &&
             isProModel(selected.model, selected.reasoningEffort);
+          const delayUntil = Date.now() + recoveryBusyMs(pro);
+          const timedOut = source.deliveryTimeout === true;
           const filed = await fileRecoveryInput(repair.sessionId, conversationId, source.turnId, pro,
             () => repairsInFlight.get(conversationId) === repair && repair.state === 'done' &&
               !stopRequestedFor(conversationId) && !isChatBlocked(conversationId) &&
               !continuationForSession(repair.sessionId),
-            Date.now() + recoveryBusyMs(pro), `delivery-timeout:${repair.token}`, true);
-          logInfo(`bridge: ${conversationId} delivery timeout after reload — recovery prompt ${filed ? 'queued' : 'withheld by outbox safety checks'}`);
+            delayUntil, `assistant-error:${repair.token}`, timedOut, !timedOut);
+          logInfo(`bridge: ${conversationId} assistant-error reload — recovery prompt ${filed
+            ? timedOut ? 'queued for native readiness' : 'queued after post-reload quiet window'
+            : 'withheld by outbox safety checks'}`);
         } else {
           const watch = activeUntil.get(conversationId);
           logInfo(watch
             ? `bridge: ${conversationId} stays under the silence watch after its error reload (turn ${watch.turnId ?? 'unknown'})`
-            : `bridge: ${conversationId} has no activity left for the silence watch after its error reload; no automatic Continue follows unless it works again`);
+            : `bridge: ${conversationId} could not file a recovery prompt after its error reload; no automatic Continue follows without valid source work`);
         }
       }
       await updateRepairProgress(

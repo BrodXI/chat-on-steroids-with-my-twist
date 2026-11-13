@@ -115,7 +115,7 @@ const entrySchema = inputArgs.extend({
   openingReopenedTab: z.string().min(1).max(220).optional().catch(undefined),
   /** The question that Continue continues, still checked until it is sent (CodeRabbit on #1960). */
   continuesQuestionId: z.string().max(200).optional(),
-  recovery: z.object({ questionId: z.string(), episode: z.string().max(200).optional(), deliveryTimeout: z.literal(true).optional(), pro: z.boolean(), busyUntil: z.number(), phase: z.enum(['ready', 'stopping', 'reloading', 'resumed']), reloadOwner: z.string().optional(),
+  recovery: z.object({ questionId: z.string(), episode: z.string().max(200).optional(), deliveryTimeout: z.literal(true).optional(), postReloadError: z.literal(true).optional(), pro: z.boolean(), busyUntil: z.number(), phase: z.enum(['ready', 'stopping', 'reloading', 'resumed']), reloadOwner: z.string().optional(),
     /** First release of an unbroken run of pages withdrawing this Continue before Send (#820). */
     withdrawnSince: z.number().optional(),
     /** Completed bounded pre-Send retry bursts. Never confers Send authorization. */
@@ -1897,9 +1897,12 @@ async function recoveryInvalidReason(row: InputEntry): Promise<string | null> {
   const [end] = await readRecentEvents(row.sessionId, 1, { kinds: ['turn_start', 'turn_end'] });
   if (end?.turnId !== boundary.turnId) return 'the recorded turn changed';
   if (end.kind === 'turn_end' && end.outcome === 'stopped') return 'the user stopped the turn';
-  // A provider-confirmed delivery timeout is different from inferred silence: its failed
-  // delivery and acknowledged browser reload are the evidence, not a prior MCP call.
-  if (!row.recovery.deliveryTimeout && !await questionHasMcpCall(row.sessionId, boundary.conversationId, boundary.turnId)) return 'the source has no confirmed local tool call';
+  // A confirmed reload for an explicitly recoverable error proves the interrupted
+  // answer independently of any local MCP call. Inferred silence still requires
+  // attributed work, so idle chats cannot invent a new question.
+  if (!row.recovery.deliveryTimeout && !row.recovery.postReloadError &&
+      !await questionHasMcpCall(row.sessionId, boundary.conversationId, boundary.turnId))
+    return 'the source has no confirmed local tool call';
   if (await readCompletedFinal(row.sessionId, boundary.conversationId)) return 'the complete answer arrived';
   const question = await readLatestUserMessage(row.sessionId, boundary.turnId);
   const [work] = await readRecentEvents(row.sessionId, 1, { kinds: RECOVERY_WORK_KINDS });
@@ -1915,7 +1918,7 @@ const recoveryRefusalsTold = new Set<string>();
 /** Shared unfinished-response ticket; mode policy belongs to the bridge hook. */
 export function fileRecoveryInput(sessionId: string, conversationId: string, turnId: string, pro: boolean,
   currentOwner: () => boolean, busyUntil = Date.now() + recoveryBusyMs(pro), episode = `turn:${turnId}`,
-  deliveryTimeout = false): Promise<boolean> {
+  deliveryTimeout = false, postReloadWait = false): Promise<boolean> {
   // Every refusal says why, once per turn and reason. Silent refusals cost a stopped chat its
   // only automatic restart with nothing anywhere naming the cause (2026-09-26: a prime's restart
   // was refused twice and the log said only that the chat had stopped).
@@ -1957,8 +1960,11 @@ export function fileRecoveryInput(sessionId: string, conversationId: string, tur
       mode: 'after-turn', dueAt: now, createdAt: now, model: null, reasoningEffort: null,
       text: recoveryMessage({ playful: getConfig().ui.playfulContinue === true, custom: getConfig().ui.customContinue }),
       recovery: { questionId: question.messageId, episode, ...(deliveryTimeout ? { deliveryTimeout: true as const } : {}),
-        pro, busyUntil, phase: 'ready' },
-      silenceBoundary: { turnId, conversationId, workSeq: workSequence(work), acceptedAt: now } };
+        ...(postReloadWait ? { postReloadError: true as const } : {}), pro, busyUntil, phase: 'ready' },
+      // Reload alone does not prove failure. Give ChatGPT a quiet grace period to
+      // resume the original answer before offering the recovery prompt to the browser.
+      silenceBoundary: { turnId, conversationId, workSeq: workSequence(work), acceptedAt: now,
+        ...(postReloadWait ? { listenUntil: busyUntil } : {}) } };
     if (!await recoveryCurrent(row)) {
       const why = await recoveryInvalidReason(row);
       return refused(why ?? 'a local tool call is still running');
