@@ -921,6 +921,7 @@ function save(over: { readOnly?: boolean; theme?: ThemeChoice; appearance?: Appe
       rotateStopFallback: $<HTMLInputElement>('rotateStopFallback').checked,
       backgroundChats: $<HTMLInputElement>('backgroundChats').checked,
       backgroundPlacement: $<HTMLSelectElement>('backgroundPlacement').value === 'group' ? 'group' : 'window',
+      idleTabCloseMinutes: Number($<HTMLSelectElement>('idleTabCloseMinutes').value) as NonNullable<Config['ui']['idleTabCloseMinutes']>,
       followUp: $<HTMLSelectElement>('followUp').value === 'queue' ? 'queue' : 'steer',
       enterSends: $<HTMLSelectElement>('enterSends').value !== 'modifier',
       browserBridgePort: (selectedBridgePort === 'auto' ? 'auto' : Number(selectedBridgePort)) as BrowserBridgePort,
@@ -1923,6 +1924,7 @@ function apply(next: AppState): void {
   $<HTMLInputElement>('rotateStopFallback').disabled = (config.ui.rotateTurnMinutes ?? 30) === 0;
   applyChecked($<HTMLInputElement>('backgroundChats'), config.ui.backgroundChats === true, previousState?.config.ui.backgroundChats);
   applyValue($<HTMLSelectElement>('backgroundPlacement'), config.ui.backgroundPlacement ?? 'window', previousState?.config.ui.backgroundPlacement ?? 'window');
+  applyValue($<HTMLSelectElement>('idleTabCloseMinutes'), String(config.ui.idleTabCloseMinutes ?? 5), previousState ? String(previousState.config.ui.idleTabCloseMinutes ?? 5) : undefined);
   applyValue($<HTMLSelectElement>('followUp'), config.ui.followUp ?? 'steer', previousState?.config.ui.followUp ?? 'steer');
   applyValue($<HTMLSelectElement>('enterSends'), config.ui.enterSends === false ? 'modifier' : 'enter', previousState ? (previousState.config.ui.enterSends === false ? 'modifier' : 'enter') : undefined);
   const bridgePortControl = $<HTMLSelectElement>('browserBridgePort');
@@ -3105,6 +3107,7 @@ for (const id of [
   'followOutput',
   'showMessageTimes',
   'followUp',
+  'idleTabCloseMinutes',
   'enterSends',
   'turnNotifications',
   'soundCues',

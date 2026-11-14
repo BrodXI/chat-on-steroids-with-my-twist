@@ -9961,10 +9961,13 @@ async function browserTabPolicy(openConversations: Set<string>) {
     return row?.activeTurnId === null && Math.max(row.lastTurnEndAt ?? 0, row.lastAssistantFinalAt ?? 0) > 0;
   });
   const quietFor = (id: string, ms: number) => Date.now() - lastActivity.get(id)! >= ms;
-  const idlePages = available.filter(id => quietFor(id, 300_000));
+  // An idle renderer is disposable, not its durable chat, worker or recovery obligations.
+  // Terminal helpers, superseded chats and duplicates keep independent retirement rules.
+  const idleCloseAfterMs = (getConfig().ui.idleTabCloseMinutes ?? 5) * 60_000;
+  const idlePages = idleCloseAfterMs > 0 ? available.filter(id => quietFor(id, idleCloseAfterMs)) : [];
   return {
     idleReuseAfterMs: 120_000,
-    idleCloseAfterMs: 300_000,
+    idleCloseAfterMs,
     cancelledDecisionClaims: cancelledDecisionClaims.map(row => ({ id: row.id, owner: row.owner, conversationId: row.conversationId })),
     // Only terminal/blocked helpers and superseded sources grant close authority.
     retiredConversations: [...new Set([...idle, ...supersededSourceConversations()])]

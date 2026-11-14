@@ -3140,7 +3140,8 @@ async function pruneManagedTabs(tabs, policy, protectedChats, closable) {
   let remaining = [...tabs];
   for (const tab of candidates) {
     const conversationId = conversationForTab(tab);
-    if (!Number.isInteger(tab.id) || tab.pinned) continue;
+    // Protect the currently selected tab, even if its model work is already terminal.
+    if (!Number.isInteger(tab.id) || tab.pinned || tab.active) continue;
     const duplicate = keeper.get(conversationId) !== tab.id && remaining.some(other => other.id !== tab.id && conversationForTab(other) === conversationId);
     if (protectedChats.has(conversationId)) continue;
     // App policy can release an idle page without retiring its durable worker/chat.
@@ -3157,7 +3158,7 @@ async function pruneManagedTabs(tabs, policy, protectedChats, closable) {
     if (cancelledClaims.length && !cancelledDecisions.length) continue;
     try {
       const current = await chrome.tabs.get(tab.id);
-      if (current.pinned || (idlePage && reading(current)) || conversationFromUrl(current.url) !== conversationId || current.pendingUrl) continue;
+      if (current.pinned || current.active || (idlePage && reading(current)) || conversationFromUrl(current.url) !== conversationId || current.pendingUrl) continue;
 
       const proof = await tabReply(tab.id, { type: 'clf-tab-close-check', conversationId,
         ...(cancelledDecisions.length ? { cancelledDecisions } : {}) }, { documentId: source.documentId });
@@ -3170,7 +3171,7 @@ async function pruneManagedTabs(tabs, policy, protectedChats, closable) {
       // before remove resolves). An attempted/rejected removal is not origin proof.
       const removed = await serializeTab(tab.id, async () => {
         const latest = await chrome.tabs.get(tab.id);
-        if (latest.pinned || (idlePage && reading(latest)) || latest.pendingUrl || conversationFromUrl(latest.url) !== conversationId || !ownsDocument(source) || journalCountForConversation(conversationId) > 0) return false;
+        if (latest.pinned || latest.active || (idlePage && reading(latest)) || latest.pendingUrl || conversationFromUrl(latest.url) !== conversationId || !ownsDocument(source) || journalCountForConversation(conversationId) > 0) return false;
         await chrome.tabs.remove(tab.id);
         tabRemovals[String(tab.id)] = { ...source, conversationId };
         tabRemovals = Object.fromEntries(Object.entries(tabRemovals).slice(-1000));

@@ -158,6 +158,8 @@ export interface UiPrefs {
   backgroundChats?: boolean;
   /** Where background tabs go: the app's minimized window, or a collapsed tab group in the user's window (#128). */
   backgroundPlacement?: 'window' | 'group';
+  /** Minutes before idle CoS-managed tabs can close; zero disables idle-only cleanup. */
+  idleTabCloseMinutes?: 0 | 2 | 5 | 10 | 15 | 30 | 60;
   browserBridgePort?: import('./browser-bridge.js').BrowserBridgePort;
   /** Opt-in browser automation for changed connector tool schemas. */
   autoRefreshPlugins?: boolean;
