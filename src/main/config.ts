@@ -57,6 +57,8 @@ import {
 } from '../shared/command-allowlist.js';
 
 export const browserBridgePortSchema = z.union([z.literal('auto'), z.literal(BROWSER_BRIDGE_PORTS)]);
+/** Only explicit choices are accepted so corrupt settings cannot shorten the idle safety window. */
+export const idleTabCloseMinutesSchema = z.union([z.literal(0), z.literal(2), z.literal(5), z.literal(10), z.literal(15), z.literal(30), z.literal(60)]);
 
 /**
  * Defaults for the newer sections, in one place so the schema and defaultConfig()
@@ -421,6 +423,7 @@ const configSchema = z.object({
     finishLeadMinutes: z.number().int().min(3).max(5).optional(),
     backgroundChats: z.boolean().optional().default(true),
     backgroundPlacement: z.enum(['window', 'group']).optional().default('window').catch('window'),
+    idleTabCloseMinutes: idleTabCloseMinutesSchema.optional().default(5).catch(5),
     followUp: z.enum(['steer', 'queue']).optional().default('steer').catch('steer'),
     enterSends: z.boolean().optional().default(true),
     browserBridgePort: browserBridgePortSchema.optional().default('auto'),
@@ -704,7 +707,7 @@ export function defaultConfig(platform: NodeJS.Platform = process.platform, rele
     // Fresh installs refresh changed connector tools on their own: a permission chosen in Setup
     // changes the tool list, and nothing else tells a new user to refresh the plugin in ChatGPT.
     // Older configs keep the schema default (off).
-    ui: { minimizeToTray: true, autoConnect: false, startAtLogin: false, keepAwake: true, keepScreenAwake: false, cosBrowserMinimize: 'taskbar', turnNotifications: true, sounds: false, rotateTurnMinutes: 30, rotateStopFallback: true, rotateStopFallbackAdopted: true, localAppUsage: true, privacyScreenshots: false, secretsShield: true, theme: 'dark', autoRefreshPlugins: true, autoSelectSkills: false, backgroundChats: true, backgroundPlacement: 'window', followUp: 'steer', enterSends: true, browserBridgePort: 'auto', autoContinue: true, followOutput: true, mentionCore: true, mentionPlugins: false, linuxDesktopEnabled: false,
+    ui: { minimizeToTray: true, autoConnect: false, startAtLogin: false, keepAwake: true, keepScreenAwake: false, cosBrowserMinimize: 'taskbar', turnNotifications: true, sounds: false, rotateTurnMinutes: 30, rotateStopFallback: true, rotateStopFallbackAdopted: true, localAppUsage: true, privacyScreenshots: false, secretsShield: true, theme: 'dark', autoRefreshPlugins: true, autoSelectSkills: false, backgroundChats: true, backgroundPlacement: 'window', idleTabCloseMinutes: 5, followUp: 'steer', enterSends: true, browserBridgePort: 'auto', autoContinue: true, followOutput: true, mentionCore: true, mentionPlugins: false, linuxDesktopEnabled: false,
       // The built-in browser is opt-in: Chrome with the companion stays the default for new and
       // existing installs alike, and the built-in one runs only once someone chooses it.
       chatBrowser: 'chrome' },
