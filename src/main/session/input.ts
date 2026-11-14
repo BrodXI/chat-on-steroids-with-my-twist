@@ -11,7 +11,8 @@ import { randomUUID } from 'node:crypto';
 import { userTitle } from './title.js';
 import { readDurable, writeDurableNow, writeDurableSoon } from '../durable.js';
 import { getSession, findSessionByConversation, createSession, deleteSession, rebindSession, conversationWasSuperseded, readRecentEvents, listUsageSessions, turnHasMcpCall, questionHasMcpCall, sessionDirectoryMissing, readCompletedFinal, readLatestUserMessage, readEvents } from './store.js';
-import { noteEditReplacement } from './edits.js';
+import { assertSessionNotRemoving } from './removal.js';
+import { noteEditReplacement, noteEditReplacements } from './edits.js';
 import { userPromptText } from '../../shared/user-prompt.js';
 import type { SessionEvent } from '../../shared/session.js';
 import { assignSessionProject, getProject, getSessionProject, localProjectPath, projectWorkspace } from '../projects.js';
@@ -625,6 +626,20 @@ async function load(): Promise<InputEntry[]> {
       seen.add(summary.conversationId);
     }
   }
+  const confirmedEdits = new Map<string, Array<{ messageId: string; replaced: string }>>();
+  for (const row of entries) {
+    const sessionId = row.sessionId ?? row.deliveredSessionId;
+    if (!row.edit || !row.messageId || !sessionId || !Number.isFinite(row.deliveredAt) ||
+        (row.state !== 'sent' && row.state !== 'cancelled')) continue;
+    const edits = confirmedEdits.get(sessionId) ?? [];
+    edits.push({ messageId: row.messageId, replaced: row.edit.messageId });
+    confirmedEdits.set(sessionId, edits);
+  }
+  for (const [sessionId, edits] of confirmedEdits) {
+    await noteEditReplacements(sessionId, edits, (messageId, error) =>
+      logWarn(`input: could not restore confirmed edit ${messageId} (${String(error)})`))
+      .catch((error: Error) => logWarn(`input: could not read confirmed edits for session ${sessionId} (${error.message})`));
+  }
   // Durable decision receipts recover helper provenance even when recording/ACK raced
   // or this version first opens a helper recorded before origins were stamped.
   for (const row of entries) {
@@ -1176,6 +1191,8 @@ export function withdrawUnsentRotation(id: string): Promise<'queued' | 'browser'
 export function enqueueInput(raw: InputArgs, finishOwner?: InputEntry['finishOwner'], options: InputCommitOptions = {}): Promise<InputEntry> {
   return serial(async () => {
     const input = inputArgs.parse(raw);
+    const localId = input.sessionId ?? input.id;
+    assertSessionNotRemoving(localId, 'enqueue input');
     const scheduled = input.scheduled !== undefined;
     if (scheduled) {
       if (finishOwner) throw new Error('Scheduled messages cannot be attached to a finish turn');
@@ -1188,6 +1205,7 @@ export function enqueueInput(raw: InputArgs, finishOwner?: InputEntry['finishOwn
     if (input.stages !== undefined && JSON.stringify([input.text, ...input.stages]).length > 12000)
       throw new Error('Keep the complete plan below 12,000 characters');
     const current = await load();
+    assertSessionNotRemoving(localId, 'enqueue input');
     const prior = current.find((entry) => entry.id === input.id);
     if (prior) {
       const comparablePrior = { ...prior, sessionId: prior.opening ? prior.requestedSessionId ?? null : prior.sessionId,
@@ -1323,6 +1341,7 @@ export function enqueueInput(raw: InputArgs, finishOwner?: InputEntry['finishOwn
     // A finish plan belongs to an existing session now. Publish every editable
     // checkpoint atomically; no composer text or first-send receipt owns its life.
     if (entry.mode === 'finish') next = materializeStages(next, entry);
+    assertSessionNotRemoving(localId, 'enqueue input');
     await commit(next, options);
     try { await materializeOpening(entry); }
     catch (error) {
@@ -1478,6 +1497,27 @@ export function cancelInput(id: string): Promise<boolean> {
     decisionWaiters.delete(id);
     await removeWithdrawnOpening(entries!.find(row => row.id === found.id)!, entries!);
     return true;
+  });
+}
+
+/** Retire an unbound chat's opening before Remove deletes its local reservation.
+ * Unlike Cancel delivery, Remove detaches any late receipt from that reservation.
+ * Keep the admission tombstone and Send evidence: an authorized Send may have happened. */
+export function retireRemovedOpening(sessionId: string): Promise<string[]> {
+  return serial(async () => {
+    const current = await load();
+    const retired = new Set<string>();
+    const next = current.map((row): InputEntry => {
+      if (!row.opening || row.sessionId !== sessionId || row.deliveredAt !== undefined ||
+          !(row.state === 'queued' || row.state === 'browser' || (row.state === 'cancelled' && row.owner))) return row;
+      retired.add(row.id);
+      return { ...row, state: 'cancelled', cancelledByUser: true, owner: null };
+    });
+    if (retired.size) {
+      await commit(next);
+      logInfo(`session ${sessionId}: retired its pending opening before local deletion`);
+    }
+    return [...retired];
   });
 }
 

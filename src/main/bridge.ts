@@ -1,6 +1,8 @@
+import { modelSelectionDiagnostic, type ModelSelectionDiagnostic } from '../shared/model-selection-diagnostic.js';
 import { nextWorkerArchive, onWorkerChatReady, readyForWake, settleWorkerArchive } from './worker-archive.js';
 import { considerTurnRotation, noteRotationDeclined, noteStopFallback, stopFallbackDue, type RotationDeps } from './turn-rotation.js';
 import { armRotationFence, clearRotationFence, FENCE_MS, restoreRotationFences, rotationFenced, rotationFenceTurn } from './rotation-fence.js';
+import { clearOwedContinue, noteOwedActivity, noteOwedContinue, type OwedDeps } from './owed-continue.js';
 import { conversationProgress } from './session/progress.js';
 import { cosSignInTransfer, SignInTransferError } from './cos-browser/sign-in-transfer.js';
 import { externalBrowserProof, noteExternalInstalled, noteExternalSignedIn, resetBrowserProofForTests } from './browser-proof.js';
@@ -154,6 +156,7 @@ import {
   readRecoveryBoundary,
   readCompletedFinal,
   turnHasMcpCall,
+  deliveredQuestionInWorkingChat,
   readActivityEvents,
   readHydratedActivityCall,
   sessionDurableModifiedAt,
@@ -507,6 +510,8 @@ interface Command {
    * open the tab; `step` is the last stage the page reported after it picked up the command.
    */
   progress?: { opened?: 'browser' | 'os'; step?: CommandStep; stepAt?: number };
+  /** Ephemeral picker telemetry: never persisted, replayed, or used to extend a deadline. */
+  modelSelection?: ModelSelectionDiagnostic;
 }
 
 /** Why a page held a queued message back, as the log says it (see `/page-note`, 2026-10-30). */
@@ -2487,6 +2492,8 @@ export async function endOwnWorkAfterStop(sessionId: string, expectedTurnId: str
   const silenced = repair?.reason === 'silence' && repair.silenceGrant?.turnId === expectedTurnId;
   if (silenced) repairsInFlight.delete(id);
   if (activeUntil.get(id)?.turnId === expectedTurnId) { endActivity(id); ended.push('the silence watch of that answer'); }
+  // A Stop by the person ends what the app owed that chat after its own rotation Stop (#2131).
+  clearOwedContinue(id);
   // A fresh turn the app was starting after that answer is cancelled, as a Stop of it cancels it.
   if (rotationFenceTurn(id) === expectedTurnId) {
     if (!await clearRotationFence(id)) logWarn(`turn rotation: ${id} — the cancelled fresh turn could not be saved; a restart within ${Math.round(FENCE_MS / 1000)} s could still continue after the person's Stop`);
@@ -2510,6 +2517,9 @@ export async function stopSessionTurn(sessionId: string, expectedTurnId: string,
   };
   await assertCurrent();
   if (!options.rotation) {
+    // A turn the stopped request reopened is the person's to stop: what the app still owed after its own
+    // rotation Stop ends with theirs, or it would file a Continue behind the Stop they asked for (CodeRabbit on #2136).
+    clearOwedContinue(id);
     // The person's Stop takes over a pending fresh-turn Stop of the same turn: no automatic continue
     // may follow the stop they asked for (CodeRabbit on #1954). The saved Stop loses its fresh-turn
     // mark first, so a restart restores neither it nor its fence.
@@ -5609,11 +5619,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       if ((err as Error).message === 'body_too_large') return tooLarge(res, origin);
       return json(res, 400, { error: 'bad_request' }, origin);
     }
+    const diagnosticOnly = body.step === 'model-diagnostic';
     const step = COMMAND_STEPS.find(candidate => candidate === body['step']);
     const command = commands.find(entry => entry.id === body['id']);
     // A wake reports its wait before it redeems, so it has no owner yet; every later step needs one.
     const allowed = step && REVIVAL_WAIT_STEPS.has(step) ? command?.owner === null : command?.owner != null && command.owner === body['client'];
-    if (!step || !command || !allowed) return json(res, 200, { ok: false }, origin);
+    if ((!step && !diagnosticOnly) || !command || !allowed) return json(res, 200, { ok: false }, origin);
+    if (diagnosticOnly && (!command.progress?.step || REVIVAL_WAIT_STEPS.has(command.progress.step))) return json(res, 200, { ok: false }, origin);
+    // Telemetry returns before execution progress can renew any deadline.
+    if (diagnosticOnly) return json(res, 200, { ok: observeModelSelection(command, body.modelSelection) }, origin);
+    if (!step) return json(res, 200, { ok: false }, origin);
+    // Final failure details share the continuation step, so a delayed telemetry RPC cannot lose them.
+    if (step === 'model-unconfirmed') observeModelSelection(command, body.modelSelection);
     command.progress = { ...command.progress, step, stepAt: Date.now() };
     if (step === 'model-unconfirmed' && command.spec.type === 'revive') {
       const wanted = commandModelSelection(command);
@@ -9339,6 +9356,27 @@ function queueBrowserRecovery(
 }
 
 /**
+ * What the owed after-Stop Continue (#2131) needs to know: whether it was sent, whether the chat moved on
+ * without it, and whether a turn is running. Read from the session and its inputs at the time of the check.
+ */
+const owedContinueDeps: OwedDeps = {
+  now: () => Date.now(),
+  file: (sessionId, turnId) => fileRotationContinueAfterStop(sessionId, turnId),
+  state: async (sessionId, conversationId, since) => {
+    const session = await getSession(sessionId);
+    if (!session || session.conversationId !== conversationId) return 'gone';
+    const rows = (await listInputs()).filter(row => row.sessionId === sessionId && row.createdAt >= since - 1_000);
+    if (rows.some(row => row.purpose === 'rotation' && row.afterStop === true &&
+        (row.state === 'sent' || (row.state === 'browser' && row.sendAuthorizedAt !== undefined)))) return 'delivered';
+    // Anything the person wrote after the Stop (here or in ChatGPT) is the chat's next turn: the Continue is not owed any more.
+    if (rows.some(row => !(row.purpose === 'rotation' && row.afterStop === true) && row.state !== 'cancelled' && row.state !== 'failed')) return 'moved';
+    const [lastQuestion] = await readRecentEvents(sessionId, 1, { kinds: ['user_message'] });
+    if (lastQuestion && lastQuestion.time > since) return 'moved';
+    return session.activeTurnId ? 'busy' : 'open';
+  }
+};
+
+/**
  * Meaningful page/call activity is the episode boundary; empty polling is intentionally absent.
  *
  * Two reasons are exempt, because neither is about whether the chat is doing something. An
@@ -9367,6 +9405,7 @@ async function noteRecoveryObservations(
     (item.blocking === true ||
       /^too many requests\b.*temporarily limited.*access.*few minutes/i.test((item.text ?? '').replace(/\s+/g, ' ')));
   noteProviderHistoryBackoff(conversationId, observations);
+  if (observations.length) noteOwedActivity(conversationId);
   // A second chat limited within ten minutes makes the pause every chat's (#1694, only while that
   // setting is on). Every access-limit notice counts, with or without a retry time, at the time the
   // page saw it, so a replayed old notice is not new evidence (CodeRabbit on #2051).
@@ -9467,6 +9506,9 @@ async function noteRecoveryObservations(
   const fencedTurn = rotationFenceTurn(conversationId);
   if (lastEnd === 'stopped' && sessionId && fencedTurn && ended?.turnId === fencedTurn) {
     void clearRotationFence(conversationId);
+    // Owed from here until it is sent: a page that refuses it before Send, or a stopped request that keeps
+    // working, no longer leaves the chat idle (#2131).
+    noteOwedContinue(conversationId, sessionId, fencedTurn, owedContinueDeps);
     void fileRotationContinueAfterStop(sessionId, fencedTurn).then(row => {
       logInfo(row ? `turn rotation: ${conversationId} — turn ${fencedTurn} stopped; continuing in a fresh turn`
         : `turn rotation: ${conversationId} — turn ${fencedTurn} stopped; a message was already waiting, so it goes instead of the continue`);
@@ -9918,6 +9960,7 @@ const silenceNotes = new Set<string>();
  */
 async function answerHasMcpCall(sessionId: string, conversationId: string, turnId: string): Promise<boolean> {
   if (await turnHasMcpCall(sessionId, conversationId, turnId)) return true;
+  if (await deliveredQuestionInWorkingChat(sessionId, conversationId, turnId)) return true;
   const turns = (await getSession(sessionId))?.timelineTurns;
   const turn = turns?.[turnId];
   if (!turn?.questionId) return false;
@@ -11002,6 +11045,8 @@ function noteCallAttribution(
     // when Chrome, the tab or a reload destroyed the page's local turn projection.
     const sourceTurnId = filedSession?.activeTurnId ?? previous?.turnId ??
       goalPendingReplyFor(conversationId)?.silenceSourceTurnId ?? filedSession?.finishTurn?.turnId ?? null;
+    // A call of a request the app stopped (ChatGPT may keep it running) is activity: the owed Continue waits (#2131).
+    noteOwedActivity(conversationId);
     grantActivity(conversationId, sessionId, continuingMcp ? Date.now() : pro ? Math.min(Date.now(), startedAt) : Date.now(), CHAT_SILENCE_MS,
       { turnId: sourceTurnId, model: pro ? 'pro' : previous?.model ?? 'unknown', mcpBacked: true });
     // #1402: a long turn continues in a fresh one, right after this tool result. Pro thinks long on
@@ -12085,6 +12130,25 @@ function commandExpiryReason(command: Command): string {
     : 'the browser did not claim this command before its deadline';
 }
 
+/** Diagnostics never authorize work. Ignore reordered phases and earlier announcement-retry attempts. */
+function observeModelSelection(command: Command, value: unknown): boolean {
+  const diagnostic = modelSelectionDiagnostic.safeParse(value), step = command.progress?.step;
+  if (!diagnostic.success || command.spec.type === 'stop' ||
+      (diagnostic.data.outcome === 'pending' && step !== 'model')) return false;
+  const trace = diagnostic.data;
+  const previous = command.modelSelection;
+  if (previous && (previous.attempt > trace.attempt ||
+      (previous.attempt === trace.attempt && previous.outcome !== 'pending' && trace.outcome === 'pending'))) return false;
+  command.modelSelection = trace;
+  if (previous?.attempt === trace.attempt && previous.outcome === trace.outcome) return true;
+  const changed = (trace.requested.effort && trace.resolved?.effort !== trace.requested.effort) ||
+    (trace.selected && (trace.after?.model !== trace.selected.model || trace.after?.effort !== trace.selected.effort));
+  const line = `bridge: model selection command=${command.id} type=${command.spec.type} owner=${specKey(command.spec)} ${JSON.stringify(trace)}`;
+  if (trace.outcome === 'failed' || (trace.outcome === 'confirmed' && changed)) logWarn(line);
+  else if (trace.outcome === 'confirmed' && trace.attempt > 1) logInfo(line);
+  return true;
+}
+
 /**
  * Where a claimed command stopped, in words a bug report can carry. Before this, a worker that
  * hung while choosing its model and one whose tab never loaded both read "did not report back
@@ -12099,7 +12163,9 @@ function commandProgress(command: Command, now = Date.now()): string {
   }
   if (!progress.step || REVIVAL_WAIT_STEPS.has(progress.step) || progress.stepAt === undefined) return 'the page picked up its task, then reported nothing more';
   const seconds = Math.max(0, Math.round((now - progress.stepAt) / 1000));
-  return `last step: ${COMMAND_STEP_TEXT[progress.step]}, reported ${seconds} s before the app gave up`;
+  const model = progress.step === 'model' && command.modelSelection
+    ? `; model selection command=${command.id} ${JSON.stringify(command.modelSelection)}` : '';
+  return `last step: ${COMMAND_STEP_TEXT[progress.step]}, reported ${seconds} s before the app gave up${model}`;
 }
 
 /** Finishes a command that has nothing left to do, timer and all. */

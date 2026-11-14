@@ -33,7 +33,7 @@ import type {
 import { CHAT_ACTIVE_MS, estimateTokens, isUnattributedSession, originTitle, UNATTRIBUTED_SESSION_TITLE } from '../../shared/session.js';
 import { isProModel } from '../../shared/chat-models.js';
 import { chatErrorMessageKey } from '../../shared/chat-error.js';
-import { continuedRequestTurn, overlappingRequestTurns, recordedRequestTurn, responseTurnId, turnOpenAt } from '../../shared/chronology.js';
+import { continuedRequestTurn, effectiveFinalTurnId, overlappingRequestTurns, recordedRequestTurn, responseTurnId, turnOpenAt } from '../../shared/chronology.js';
 import { getConfig } from '../config.js';
 import { logInfo, logWarn } from '../logger.js';
 import { requestTraceNote } from './request-trace.js';
@@ -2655,7 +2655,7 @@ async function recordChatObservationsNow(
           ...(item.reaction !== undefined ? { reaction: item.reaction } : {}),
           ...(item.model ? { model: item.model } : {}),
           ...(item.parentId ? { parentId: item.parentId } : {}),
-          ...(editReplacement(item.messageId) ? { replaces: editReplacement(item.messageId) }
+          ...(editReplacement(item.messageId) ? { replaces: editReplacement(item.messageId), replacesConfirmed: true as const }
             : item.parentId && item.parentExact === true ? await replacedQuestion(sessionId, item.messageId, item.parentId) : {}),
           ...(takeAutomaticReply(conversationId, item.text ?? '') ? { automatic: true as const } : {}),
           messageId: item.messageId
@@ -2776,10 +2776,13 @@ async function recordChatObservationsNow(
         const workingActivity = written.contentChanged && state !== 'final' && item.activeNow === true &&
           (!canonicalTurn || canonicalTurn === live?.turnId || resumedUncertainTurn) &&
           !(live?.turnStartedAt === null && (live.lastTurnOutcome === 'stopped' || live.lastTurnOutcome === 'completed'));
-        const turns = state === 'final' && canonicalTurn && live?.turnId && live.turnId !== canonicalTurn && written.event.kind === 'assistant_message' &&
-          written.event.providerMessageId ? (await getSession(sessionId))?.timelineTurns : undefined;
-        const finishingTurn = canonicalTurn && live?.turnId && (canonicalTurn === live.turnId ||
-          (turns && responseTurnId(turns, canonicalTurn) === responseTurnId(turns, live.turnId))) ? live.turnId : null;
+        const turns = state === 'final' && canonicalTurn && written.event.kind === 'assistant_message'
+          ? (await getSession(sessionId))?.timelineTurns : undefined;
+        const effectiveTurn = written.event.kind === 'assistant_message' && turns
+          ? effectiveFinalTurnId(turns, written.event)
+          : canonicalTurn;
+        const finishingTurn = canonicalTurn && live?.turnId && (canonicalTurn === live.turnId || effectiveTurn === live.turnId ||
+          (turns && responseTurnId(turns, effectiveTurn ?? canonicalTurn) === responseTurnId(turns, live.turnId))) ? live.turnId : null;
         if (state === 'final' && written.event.kind === 'assistant_message' && finishingTurn && recoverableTurns.has(finishingTurn) &&
             !explicitEnds.has(finishingTurn)) {
           recoveredFinal = { turnId: finishingTurn, time: item.time,
@@ -2794,7 +2797,7 @@ async function recordChatObservationsNow(
         ) {
           goalCandidates.push({
             replyId: written.event.messageId,
-            turnId: written.event.turnId ?? `reply:${written.event.messageId}`.slice(0, 200),
+            turnId: effectiveTurn ?? written.event.turnId ?? `reply:${written.event.messageId}`.slice(0, 200),
             eventSeq: written.event.origin ?? written.event.seq
           });
         }

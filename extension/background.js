@@ -56,7 +56,7 @@ const MODEL_REQUEST_TIMEOUT_MS = 190_000;
 /** The reason a deadline aborts with, so it is a fact the caller can act on rather than prose. */
 const TIMED_OUT = 'the app took too long to answer';
 /** Bumped only when the request/response shape changes; the app compares it. */
-const BRIDGE_PROTOCOL = 14;
+const BRIDGE_PROTOCOL = 15;
 /** Browser-owned presentation preferences also exposed by the popup. */
 const RENDER_STREAM_KEY = 'renderStreamEnabled';
 const SHOW_TIMES_KEY = 'showStreamTimes';
@@ -1221,6 +1221,7 @@ function forgetPort() {
  * not user intent to reconnect. Only an explicit successful pair clears the local latch.
  */
 async function latchAppDisconnect() {
+  clearDesktopInputRetries();
   closeWakeSocket();
   void getBrowserController().then(controller => controller?.revoke()).catch(() => undefined);
   token = null;
@@ -1244,7 +1245,8 @@ async function call(path, init = {}, retried = false) {
     const got = await provision();
     if (!got.ok) return { ok: false, status: 401, error: got.error || 'not_paired' };
   }
-  const { timeoutMs = REQUEST_TIMEOUT_MS, ...rest } = init;
+  const { timeoutMs = REQUEST_TIMEOUT_MS, isCurrent, ...rest } = init;
+  if (isCurrent && !isCurrent()) return { ok: false, status: 0, error: 'stale_document' };
   try {
     const response = await fetchBounded(
       `http://127.0.0.1:${found.port}${path}`,
@@ -2271,11 +2273,88 @@ function prepareDesktopInputReceipt(tabId, id, documentId) {
   return tabReply(tabId, { type: 'clf-prepare-desktop-input', id }, { documentId }, 15000);
 }
 
+const DESKTOP_INPUT_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000];
+const desktopInputOfferRetries = new Map();
+
+function clearDesktopInputRetry(id, expectedTabId) {
+  const state = desktopInputOfferRetries.get(id);
+  if (!state) return;
+  if (expectedTabId !== undefined && state.tabId !== expectedTabId) return;
+  if (state.timer !== null) clearTimeout(state.timer);
+  desktopInputOfferRetries.delete(id);
+}
+
+function clearDesktopInputRetries() {
+  for (const id of [...desktopInputOfferRetries.keys()]) clearDesktopInputRetry(id);
+}
+
+function resumeDeferredDesktopInputRetries() {
+  if (!token || disconnected || extensionReloadPending) return;
+  let resume = false;
+  for (const [id, state] of [...desktopInputOfferRetries.entries()]) {
+    if (!state.deferredWhileReloading) continue;
+    state.deferredWhileReloading = false;
+    if (inputOpenings[id]?.tab !== state.tabId) {
+      clearDesktopInputRetry(id, state.tabId);
+      continue;
+    }
+    resume = true;
+  }
+  if (resume) void maintain(true).catch(() => undefined);
+}
+
+function scheduleDesktopInputRetry(id, tabId, reason) {
+  if (!token || disconnected) return;
+  if (inputOpenings[id]?.tab !== tabId) { clearDesktopInputRetry(id, tabId); return; }
+  const existing = desktopInputOfferRetries.get(id);
+  const state = existing && existing.tabId === tabId
+    ? existing
+    : { tabId, attempts: 0, timer: null, exhaustedLogged: false, deferredWhileReloading: false };
+  if (existing && existing !== state && existing.timer !== null) clearTimeout(existing.timer);
+  if (state.timer !== null) return;
+  if (state.attempts >= DESKTOP_INPUT_RETRY_DELAYS_MS.length) {
+    if (!state.exhaustedLogged) {
+      state.exhaustedLogged = true;
+      console.info(`desktop input ${id}: fast retries exhausted on tab ${tabId} (${reason}); waiting for next alarm or page event`);
+    }
+    desktopInputOfferRetries.set(id, state);
+    return;
+  }
+  const delayMs = DESKTOP_INPUT_RETRY_DELAYS_MS[state.attempts];
+  state.attempts += 1;
+  state.deferredWhileReloading = false;
+  console.info(`desktop input ${id}: retry ${state.attempts} scheduled in ${delayMs} ms (tab ${tabId} ${reason})`);
+  state.timer = setTimeout(() => {
+    state.timer = null;
+    if (!token || disconnected) return;
+    if (inputOpenings[id]?.tab !== tabId) { clearDesktopInputRetry(id, tabId); return; }
+    if (extensionReloadPending) {
+      state.deferredWhileReloading = true;
+      return;
+    }
+    void maintain(true).catch(() => undefined);
+  }, delayMs);
+  desktopInputOfferRetries.set(id, state);
+}
+
 function offerDesktopInput(tabId, message) {
+  const election = inputOpenings[message.id];
   // The reply is not a delivery receipt: the content script synchronously owns
   // one desktopInputBusy slot, then the app's durable browser claim and one-time
   // sendAuthorizedAt fence every later offer. Waiting here only starves repairs.
-  void chrome.tabs.sendMessage(tabId, message).catch(() => undefined);
+  // If the page is still hydrating or busy, schedule a bounded fast retry instead
+  // of leaving the message unclaimed until the 30-second maintenance alarm.
+  void chrome.tabs.sendMessage(tabId, message).then(
+    reply => {
+      if (!election || inputOpenings[message.id] !== election || election.tab !== tabId) return;
+      if (reply?.ok === true) { clearDesktopInputRetry(message.id, tabId); return; }
+      if (reply?.ok === false) scheduleDesktopInputRetry(message.id, tabId, 'declined');
+    },
+    () => {
+      if (!election || inputOpenings[message.id] !== election || election.tab !== tabId) return;
+      scheduleDesktopInputRetry(message.id, tabId, 'unreachable');
+    }
+  );
 }
 
 // Missing-tab reports only expose a pre-claim failure in main; they never
@@ -2311,9 +2390,16 @@ async function deliverDesktopInputs(inputs, background, reusableConversations = 
   if (Array.isArray(activeIds)) {
     const active = new Set(activeIds);
     for (const id of Object.keys(inputOpenings)) if (!active.has(id)) delete inputOpenings[id];
+    for (const id of [...desktopInputOfferRetries.keys()]) if (!active.has(id)) clearDesktopInputRetry(id);
     await persistLive();
+  } else {
+    const offered = new Set(inputs.map(input => input?.id).filter(Boolean));
+    for (const id of [...desktopInputOfferRetries.keys()]) if (!offered.has(id)) clearDesktopInputRetry(id);
   }
-  if (!inputs.length) return;
+  if (!inputs.length) {
+    clearDesktopInputRetries();
+    return;
+  }
   let tabs = await chrome.tabs.query({ url: CHATGPT_TAB_URLS });
   const elections = inputOpenings;
   const elect = async (id, record) => {
@@ -2438,6 +2524,7 @@ async function deliverDesktopInputs(inputs, background, reusableConversations = 
     // Losing it never authorizes another creation or a transfer to a different chat.
     if (tab && !elected) await elect(input.id, { tab: tab.id, stage: 'ready', conversationId: target });
     if (!tab) {
+      clearDesktopInputRetry(input.id);
       // Handout is opening authority, not a missing delivery receipt. A closed or
       // unresponsive elected document never grants another opening attempt.
       if (elections[input.id] && !recoveredReuse) {
@@ -2652,13 +2739,15 @@ let projectCreateFlight = null;
 /** A helper the person closed is opened again, but not more often than this. */
 const PROJECT_CREATE_REOPEN_MS = 120_000;
 function inspectProjectCreates(requests) {
+  // An unavailable catalog is not an empty/completed list. Keep the current helper and owner.
+  if (!Array.isArray(requests)) return;
   if (projectCreateFlight) return projectCreateFlight;
   // A page that just finished a creation answers after the app has already asked for the next pass,
   // which this flight then turned away; so a flight that asked a page runs one more pass itself, or a
   // second project added right after the first waited for an unrelated wake (measured 2026-10-10).
   let asked = false;
   projectCreateFlight = (async () => {
-    const list = (Array.isArray(requests) ? requests : [])
+    const list = requests
       .filter(request => request && /^[a-f0-9-]{36}$/i.test(String(request.id)) && typeof request.name === 'string' && request.name);
     const owner = (await chrome.storage.session.get('projectCreateOwner')).projectCreateOwner;
     if (owner && !list.some(request => request.id === owner.id)) {
@@ -3489,6 +3578,7 @@ async function reloadForExtensionUpdate(offer, liveOpenings, liveCommands, liveS
     }
   }
   extensionReloadPending = true;
+  let reloading = false;
   try {
     const prepared = await call('/extension/update', { method: 'POST',
       body: JSON.stringify(busyFor ? { pastBusyChatsMs: busyFor } : {}) });
@@ -3499,9 +3589,12 @@ async function reloadForExtensionUpdate(offer, liveOpenings, liveCommands, liveS
     if (!prepared.ok || prepared.data?.ready !== true || prepared.data.build !== offer.build) { extensionUpdateHold = 'folder-not-ready'; return; }
     extensionUpdateHold = null;
     await chrome.storage.local.set({ extensionReloadAttempt: attempt });
+    if (typeof clearDesktopInputRetries === 'function') clearDesktopInputRetries();
+    reloading = true;
     chrome.runtime.reload();
   } finally {
     extensionReloadPending = false;
+    if (!reloading && typeof resumeDeferredDesktopInputRetries === 'function') resumeDeferredDesktopInputRetries();
   }
 }
 
@@ -4238,6 +4331,36 @@ function serializeTab(tab, operation) {
   return tracked;
 }
 
+/** Best-effort telemetry: one HTTP flight and one coalesced successor per tab, never tab-queue I/O. */
+const modelDiagnosticFlights = new Map();
+function queueModelDiagnostic(body, source) {
+  if (!ownsDocument(source)) return false;
+  const report = { body, source, intent: connectionEpoch }, active = modelDiagnosticFlights.get(source.tab);
+  if (active) {
+    const prior = active.next || active.current, before = prior.body.modelSelection, after = body.modelSelection;
+    if (prior.intent === report.intent && prior.source.documentId === source.documentId &&
+        prior.source.navigationEpoch === source.navigationEpoch && prior.body.id === body.id && prior.body.client === body.client &&
+        before && after && (before.attempt > after.attempt ||
+          (before.attempt === after.attempt && before.outcome !== 'pending' && after.outcome === 'pending'))) return true;
+    active.next = report;
+    return true;
+  }
+  const flight = { current: null, next: report };
+  modelDiagnosticFlights.set(source.tab, flight);
+  void (async () => {
+    try {
+      while (flight.next) {
+        const next = flight.current = flight.next;
+        flight.next = null;
+        const isCurrent = () => next.intent === connectionEpoch && !disconnected && ownsDocument(next.source);
+        if (!isCurrent()) continue;
+        await call('/commands/step', { method: 'POST', body: JSON.stringify(next.body), isCurrent });
+      }
+    } finally { modelDiagnosticFlights.delete(source.tab); }
+  })().catch(() => undefined);
+  return true;
+}
+
 async function currentConversationDocument(source, conversationId) {
   if (!conversationId || !ownsDocument(source)) return false;
   const tab = await chrome.tabs.get(source.tab).catch(() => null);
@@ -4586,6 +4709,7 @@ const HANDLERS = {
     await load();
     closeWakeSocket();
     if (browserController) await (await browserController).revoke();
+    clearDesktopInputRetries();
     // Invalidate any `/pair` already on the wire before changing the visible/persisted state.
     connectionEpoch++;
     token = null;
@@ -5147,12 +5271,16 @@ const HANDLERS = {
     void call('/page-note', { method: 'POST', body: JSON.stringify(body) }).catch(() => undefined);
     return { ok: true };
   },
-  async command_step(message) {
+  async command_step(message, _sender, source) {
     const id = typeof message.id === 'string' ? message.id.slice(0, 128) : '';
     const step = typeof message.step === 'string' ? message.step.slice(0, 32) : '';
     if (!id || !step) return { ok: false };
-    const result = await call('/commands/step', { method: 'POST',
-      body: JSON.stringify({ id, client: String(message.client || '').slice(0, 64), step }) });
+    const body = { id, client: String(message.client || '').slice(0, 64), step,
+      // The app validates the fixed diagnostic shape; old apps ignore this optional field.
+      ...(message.modelSelection && typeof message.modelSelection === 'object' && JSON.stringify(message.modelSelection).length <= 8192
+        ? { modelSelection: message.modelSelection } : {}) };
+    if (step === 'model-diagnostic') return { ok: queueModelDiagnostic(body, source) };
+    const result = await call('/commands/step', { method: 'POST', body: JSON.stringify(body) });
     return { ok: result.ok === true };
   },
   /** The marked page asking for the one command it was opened for. */
