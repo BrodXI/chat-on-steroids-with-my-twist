@@ -3475,6 +3475,13 @@ async function revealChats(ids) {
     try {
       const tabs = await chrome.tabs.query({ url: CHATGPT_TAB_URLS });
       const [tab] = tabs.filter(candidate => conversationForTab(candidate) === conversationId).sort((a, b) => a.id - b.id);
+      // An exact chat tab inside a collapsed group is not visibly open merely because
+      // it becomes active. Expand only for an explicit/recovery fallback reveal, never
+      // for ordinary background placement or the app's passive selected-chat follow.
+      if (tab && Number.isInteger(tab.groupId) && tab.groupId >= 0 && typeof chrome.tabGroups?.get === 'function') {
+        const group = await chrome.tabGroups.get(tab.groupId).catch(() => null);
+        if (group?.collapsed === true) await chrome.tabGroups.update(tab.groupId, { collapsed: false });
+      }
       const shown = tab
         ? await chrome.tabs.update(tab.id, { active: true })
         : await createUserWindowTab(`https://chatgpt.com/c/${conversationId}`, true);
