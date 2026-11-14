@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  FOREGROUND_GLOBAL_FOCUS_COOLDOWN_MS,
   FOREGROUND_REVEAL_MAX_ATTEMPTS,
   FOREGROUND_REVEAL_RETRY_MS,
   StalledWorkForegroundGate,
@@ -41,21 +42,26 @@ describe('stalled Work tab foreground fallback', () => {
 
   it('ignores late acknowledgements from the old episode and does not combine chats', () => {
     const gate = new StalledWorkForegroundGate();
+    const next = 100 + FOREGROUND_GLOBAL_FOCUS_COOLDOWN_MS;
     expect(gate.claim('chat-a', 'old', 100)).toBe(true);
-    expect(gate.claim('chat-a', 'new', 101)).toBe(true);
+    expect(gate.claim('chat-a', 'new', next)).toBe(true);
     gate.finish('chat-a', 'old', true);
-    expect(gate.claim('chat-a', 'new', 102)).toBe(false);
-    expect(gate.claim('chat-b', 'old', 102)).toBe(true);
+    expect(gate.claim('chat-a', 'new', next + 1)).toBe(false);
+    expect(gate.claim('chat-b', 'old', next + 1)).toBe(false);
+    expect(gate.claim('chat-b', 'old', next + FOREGROUND_GLOBAL_FOCUS_COOLDOWN_MS)).toBe(true);
     gate.finish('chat-a', 'new', false);
-    expect(gate.claim('chat-a', 'new', 101 + FOREGROUND_REVEAL_RETRY_MS)).toBe(true);
+    expect(gate.claim('chat-a', 'new', next + FOREGROUND_REVEAL_RETRY_MS)).toBe(true);
   });
 
   it('bounds idle bookkeeping to 500 distinct chats', () => {
     const gate = new StalledWorkForegroundGate();
-    for (let id = 0; id < 501; id++) expect(gate.claim('chat-' + id, 'old', 100)).toBe(true);
+    for (let id = 0; id < 501; id++) {
+      expect(gate.claim('chat-' + id, 'old', 100 + id * FOREGROUND_GLOBAL_FOCUS_COOLDOWN_MS)).toBe(true);
+    }
     // The oldest chat was pruned and may use its now-untracked episode again.
-    expect(gate.claim('chat-0', 'old', 101)).toBe(true);
+    const later = 100 + 501 * FOREGROUND_GLOBAL_FOCUS_COOLDOWN_MS;
+    expect(gate.claim('chat-0', 'old', later)).toBe(true);
     gate.clear();
-    expect(gate.claim('chat-500', 'old', 102)).toBe(true);
+    expect(gate.claim('chat-500', 'old', later + 1)).toBe(true);
   });
 });
