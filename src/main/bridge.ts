@@ -5811,6 +5811,16 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       } else if (command.spec.type === 'resume') {
         // Narrowed above.
         if (!conversation) return json(res, 503, { error: 'conversation_required', retryable: true }, origin);
+        // New extension receipts carry the exact ChatGPT user-message ID observed after our
+        // authorized native Send. Bind that proof before committing; the marker/journal path
+        // remains an independent witness if this ACK is lost. Older extension ACKs still use
+        // their original fallback until those browser documents finish or reload.
+        const messageId = typeof body['destinationMessageId'] === 'string' &&
+          body['destinationMessageId'].length > 0 && body['destinationMessageId'].length <= 200
+          ? body['destinationMessageId'] : null;
+        if (messageId && !await bindContinuationDestinationMessageNow(command.spec.token, conversation, messageId)) {
+          return json(res, 409, { error: 'resume_destination_message_conflict' }, origin);
+        }
         const result = await commitContinuationResult(command.spec.token, conversation);
         if (result.status === 'retryable') {
           logWarn(`bridge: resume commit for ${command.spec.sessionId} remains retryable — ${result.reason}`);

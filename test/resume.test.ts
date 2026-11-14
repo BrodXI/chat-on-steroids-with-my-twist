@@ -236,6 +236,46 @@ describe('the whole move, when it works', () => {
    * loaded in. The capture request comes from chat A's own page, so the reply to it names the
    * chat to open and that browser creates it beside A. See bridge.ts::offerPlacement.
    */
+  it('requires a dispatched native Send before accepting a destination message ID in the ACK', async () => {
+    await connect();
+    const sessionId = await record();
+    const { token: continuation } = await press();
+    const commandId = (await capture(continuation)).body.commandId as string;
+    expect((await redeem(commandId, 'page-1')).status).toBe(200);
+
+    const proof = {
+      id: commandId, status: 'sent', conversationId: CHAT_B, client: 'page-1',
+      destinationMessageId: 'native-resume-user-row'
+    };
+    // A browser that did not cross the durable pre-click fence cannot attach a row
+    // or move the session merely by claiming that it submitted the bootstrap.
+    const premature = await request('POST', '/commands/ack', { body: proof });
+    expect(premature.status).toBe(409);
+    expect(premature.body.error).toBe('resume_destination_message_conflict');
+    expect((await getSession(sessionId))?.conversationId).toBe(CHAT_A);
+
+    const attempt = await request('POST', '/compact', {
+      body: { token: continuation, commandId, client: 'page-1', destinationAttempt: true }
+    });
+    expect(attempt.body).toMatchObject({ allowed: true });
+    const dispatch = await request('POST', '/compact', {
+      body: { token: continuation, commandId, client: 'page-1', destinationDispatch: true }
+    });
+    expect(dispatch.body).toMatchObject({ armed: true });
+
+    const accepted = await request('POST', '/commands/ack', { body: proof });
+    expect(accepted.status).toBe(200);
+    expect(accepted.body).toMatchObject({ committed: true, final: true });
+    expect((await getSession(sessionId))?.conversationId).toBe(CHAT_B);
+    expect(await sessionHandoffCount(sessionId)).toBe(1);
+
+    // Replaying the same browser-owned receipt cannot create another handoff or move B.
+    const replay = await request('POST', '/commands/ack', { body: proof });
+    expect(replay.status).toBe(200);
+    expect(replay.body.committed).toBe(true);
+    expect(await sessionHandoffCount(sessionId)).toBe(1);
+  });
+
   it('opens exactly one chat, and only after a brief exists', async () => {
     await connect();
     await record();

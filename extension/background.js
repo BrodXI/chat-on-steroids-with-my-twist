@@ -1410,7 +1410,7 @@ async function redeemCommand(id, client, conversationId = null, projectEntry = f
   return { ok: true, command, ...(command ? { identity: { connectorNames, connectorApps, ownCoreApp } } : {}) };
 }
 
-function commandAckPayload(id, status, error, conversationId, agent, client, turnId, detail) {
+function commandAckPayload(id, status, error, conversationId, agent, client, turnId, detail, destinationMessageId) {
   return {
     id,
     status,
@@ -1419,7 +1419,9 @@ function commandAckPayload(id, status, error, conversationId, agent, client, tur
     conversationId: conversationId || undefined,
     agent: agent || undefined,
     client: client || undefined,
-    ...(typeof turnId === 'string' && turnId.length <= 256 ? { turnId } : {})
+    ...(typeof turnId === 'string' && turnId.length <= 256 ? { turnId } : {}),
+    ...(typeof destinationMessageId === 'string' && destinationMessageId.length > 0 && destinationMessageId.length <= 200
+      ? { destinationMessageId } : {})
   };
 }
 
@@ -1500,10 +1502,10 @@ async function drainCommandAcks(targetId = null) {
   }
 }
 
-async function ackCommand(id, status, error, conversationId, agent, client, source = null, turnId, detail) {
+async function ackCommand(id, status, error, conversationId, agent, client, source = null, turnId, detail, destinationMessageId) {
   await load();
   if (!id) return { ok: false, status: 400, error: 'bad_command_id' };
-  const payload = commandAckPayload(id, status, error, conversationId, agent, client, turnId, detail);
+  const payload = commandAckPayload(id, status, error, conversationId, agent, client, turnId, detail, destinationMessageId);
   const queued = {
     ...payload,
     provisional: payload.conversationId ? null : tabKey(source),
@@ -5334,7 +5336,8 @@ const HANDLERS = {
       message.client,
       source,
       undefined,
-      message.detail
+      message.detail,
+      message.destinationMessageId
     );
     // ackCommand first made this irreversible page result durable in the browser-owned outbox.
     // From that point recovery must never reopen the pre-send marker, even if the bridge HTTP
