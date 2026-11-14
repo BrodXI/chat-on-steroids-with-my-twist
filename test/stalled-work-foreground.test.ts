@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest';
+import {
+  FOREGROUND_REVEAL_MAX_ATTEMPTS,
+  FOREGROUND_REVEAL_RETRY_MS,
+  StalledWorkForegroundGate,
+  WORK_NO_PROGRESS_REVEAL_MS,
+  workHasBeenQuietLongEnough
+} from '../src/main/stalled-work-foreground.js';
+
+describe('stalled Work tab foreground fallback', () => {
+  it('requires ten minutes without progress rather than treating a live poll as new work', () => {
+    const at = 100_000;
+    expect(workHasBeenQuietLongEnough(at + WORK_NO_PROGRESS_REVEAL_MS - 1, at)).toBe(false);
+    expect(workHasBeenQuietLongEnough(at + WORK_NO_PROGRESS_REVEAL_MS, at)).toBe(true);
+    expect(workHasBeenQuietLongEnough(at + WORK_NO_PROGRESS_REVEAL_MS, at + 1)).toBe(false);
+    expect(workHasBeenQuietLongEnough(at, 0)).toBe(false);
+    expect(workHasBeenQuietLongEnough(NaN, at)).toBe(false);
+    expect(workHasBeenQuietLongEnough(at, Infinity)).toBe(false);
+  });
+
+  it('allows one reveal while pending or after success for the same episode', () => {
+    const gate = new StalledWorkForegroundGate();
+    expect(gate.claim('chat-a', 'turn-1', 1000)).toBe(true);
+    expect(gate.claim('chat-a', 'turn-1', 2000)).toBe(false);
+    gate.finish('chat-a', 'turn-1', true);
+    expect(gate.claim('chat-a', 'turn-1', 999_999)).toBe(false);
+    expect(gate.claim('chat-a', 'turn-2', 1_000_000)).toBe(true);
+  });
+
+  it('retries a failed reveal only after a quiet minute and stops after two failures', () => {
+    const gate = new StalledWorkForegroundGate();
+    const first = 100_000;
+    expect(gate.claim('chat-a', 'repair-1', first)).toBe(true);
+    gate.finish('chat-a', 'repair-1', false);
+    expect(gate.claim('chat-a', 'repair-1', first + FOREGROUND_REVEAL_RETRY_MS - 1)).toBe(false);
+    expect(gate.claim('chat-a', 'repair-1', first + FOREGROUND_REVEAL_RETRY_MS)).toBe(true);
+    gate.finish('chat-a', 'repair-1', false);
+    expect(gate.claim('chat-a', 'repair-1', first + 200_000)).toBe(false);
+    expect(FOREGROUND_REVEAL_MAX_ATTEMPTS).toBe(2);
+  });
+
+  it('ignores late acknowledgements from the old episode and does not combine chats', () => {
+    const gate = new StalledWorkForegroundGate();
+    expect(gate.claim('chat-a', 'old', 100)).toBe(true);
+    expect(gate.claim('chat-a', 'new', 101)).toBe(true);
+    gate.finish('chat-a', 'old', true);
+    expect(gate.claim('chat-a', 'new', 102)).toBe(false);
+    expect(gate.claim('chat-b', 'old', 102)).toBe(true);
+    gate.finish('chat-a', 'new', false);
+    expect(gate.claim('chat-a', 'new', 101 + FOREGROUND_REVEAL_RETRY_MS)).toBe(true);
+  });
+
+  it('bounds idle bookkeeping to 500 distinct chats', () => {
+    const gate = new StalledWorkForegroundGate();
+    for (let id = 0; id < 501; id++) expect(gate.claim('chat-' + id, 'old', 100)).toBe(true);
+    // The oldest chat was pruned and may use its now-untracked episode again.
+    expect(gate.claim('chat-0', 'old', 101)).toBe(true);
+    gate.clear();
+    expect(gate.claim('chat-500', 'old', 102)).toBe(true);
+  });
+});
