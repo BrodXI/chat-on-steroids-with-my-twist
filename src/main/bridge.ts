@@ -65,6 +65,7 @@ import { inBrowserDelivery, automaticSendKind, heldBySendCheck, holdInputForSend
  */
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { StalledWorkForegroundGate, workHasBeenQuietLongEnough } from './stalled-work-foreground.js';
 import http from 'node:http';
 import type { BridgeStatus, CompanionDiagnostics, CompanionEnvironment, CompanionPageDiagnostics, CompanionTabDiagnostics, CompanionTraceEntry } from '../shared/types.js';
 import { BROWSER_PICKUP_ATTEMPT_LIMIT, BROWSER_PICKUP_BACKOFF_MS, BROWSER_PICKUP_MAX_ATTEMPTS, BROWSER_PICKUP_SLOW_MS, browserPickupDelay, recoveryBusyMs } from '../shared/recovery.js';
@@ -8653,6 +8654,8 @@ interface Repair {
    * needs a page to report something back.
    */
   offers?: number;
+  /** Browser-reported non-progress action failures on this exact repair episode. */
+  foregroundFailures?: number;
   /**
    * When a page last asked to claim this repair (#1922). A claim refused for the moment still proves
    * a page is there, so offers made while one asked recently are not counted toward the no-page
@@ -9163,6 +9166,55 @@ const unclaimedRepairTold = new Set<string>();
  * in memory, because a restart has no page to speak of either and should ask again.
  */
 const pagelessChats = new Set<string>();
+
+/** One visible reveal per failed/stalled task episode, with one bounded retry if the browser refused. */
+const stalledWorkForeground = new StalledWorkForegroundGate();
+
+/**
+ * A foreground-only fallback. Recovery/Stop/Send remain entirely with the existing durable
+ * authorities; revealing a tab cannot create or discharge a prompt. The browser extension
+ * selects the existing tab first and opens an exact conversation URL only if no tab exists.
+ */
+function forceOpenStalledWorkTabOnce(
+  conversationId: string,
+  sessionId: string,
+  episode: string,
+  why: 'no-progress' | 'recovery-failed' | 'stopped-without-followup',
+  current: () => boolean = () => true
+): boolean {
+  const now = Date.now();
+  // Respect an explicit user close, Block/Stop, provider backoff, and the selected browser.
+  // A running tool or approval card is progress requiring time or user action, not a stuck page.
+  if (!tabRecoveryWanted(conversationId) || isChatBlocked(conversationId) ||
+      stopRequestedFor(conversationId) || getConfig().ui.browserOnly === true ||
+      runningToolCalls(conversationId) > 0 || approvalCardWaiting(conversationId, now) ||
+      providerHistoryBackoff(conversationId, now) !== null ||
+      !browserWakeConnected() || !revealCapable() || !current() ||
+      !stalledWorkForeground.claim(conversationId, episode, now)) return false;
+  void getSession(sessionId).then(async session => {
+    if (session?.conversationId !== conversationId || session.browserRecoveryDismissedAt !== undefined ||
+        !departureAllowsRepair(session) || !current() || !tabRecoveryWanted(conversationId) ||
+        isChatBlocked(conversationId) || stopRequestedFor(conversationId) ||
+        runningToolCalls(conversationId) > 0 || approvalCardWaiting(conversationId) ||
+        providerHistoryBackoff(conversationId) !== null ||
+        !browserWakeConnected() || !revealCapable()) {
+      stalledWorkForeground.finish(conversationId, episode, false);
+      return;
+    }
+    const shown = await revealChatInBrowser(conversationId);
+    stalledWorkForeground.finish(conversationId, episode, shown);
+    if (shown) {
+      logWarn(`bridge: ${conversationId} has no new work after ${why}; brought its original chat tab to the foreground (no reload or message sent)`);
+      void recordNote(sessionId, 'No new progress could be confirmed, so Chat On Steroids brought this chat tab to the foreground. It did not send a message or interrupt a running tool.').catch(() => undefined);
+    } else {
+      logInfo(`bridge: ${conversationId} could not be shown after ${why}; the same episode permits at most one more attempt`);
+    }
+  }).catch(error => {
+    stalledWorkForeground.finish(conversationId, episode, false);
+    logWarn(`bridge: ${conversationId} foreground fallback failed: ${error instanceof Error ? error.message : String(error)}`);
+  });
+  return true;
+}
 
 function rememberProviderDeferredColdStart(conversationId: string, repair: Repair): void {
   if (repair.reason !== 'goal' && repair.reason !== 'compaction') return;
@@ -10130,6 +10182,11 @@ function finishSilentChats(conversationIds: readonly string[], inspected?: Spent
     const quiet = failedTurnQuiet.get(conversationId);
     if (quiet) {
       const { sessionId, outcome } = quiet;
+      // The ordinary recovery had its chance. Bring the still-unfinished tab forward so
+      // the person can see the result instead of leaving failed Work hidden indefinitely.
+      forceOpenStalledWorkTabOnce(conversationId, sessionId,
+        `stopped:${sessionId}:${outcome}:${seen?.grant.evidenceAt ?? 'unknown'}`,
+        'stopped-without-followup', () => !activeUntil.has(conversationId) || activeUntil.get(conversationId) === seen?.grant);
       failedTurnQuiet.delete(conversationId);
       void recordNote(
         sessionId,
@@ -11263,6 +11320,18 @@ async function takePendingRepairs(
   chosen = false
 ): Promise<Array<{ conversationId: string; token: string; reason: Repair['reason']; focus: boolean }>> {
   retireSpentRepairs();
+  // The browser still polls /status when a turn has no new text. A ten-minute gap in the
+  // exact per-chat activity grant brings its tab forward once; mere page polls never renew it.
+  // The same source episode is fenced against repeat focus and a new turn gives a new key.
+  for (const [conversationId, grant] of activeUntil) {
+    if (!workHasBeenQuietLongEnough(now, grant.evidenceAt)) continue;
+    const repair = repairsInFlight.get(conversationId);
+    const episode = repair && repair.state !== 'done'
+      ? `repair:${repair.sessionId}:${repair.episode}`
+      : `quiet:${grant.sessionId}:${grant.turnId ?? 'unknown'}:${grant.evidenceAt}`;
+    forceOpenStalledWorkTabOnce(conversationId, grant.sessionId, episode, 'no-progress',
+      () => activeUntil.get(conversationId) === grant);
+  }
   const pickupFloor = pickupWatchFloor;
   const owed = await owedPickups(now);
   for (const [conversationId, repair] of repairsInFlight) {
@@ -11708,6 +11777,17 @@ async function failRepairAttempt(
       // Navigation is transient; keep the same repair episode and retry after the short navigation cooldown.
       repair.notBefore = Math.max(repair.notBefore, Date.now() + NAVIGATION_RECOVERY_COOLDOWN_MS);
     }
+    // Two real browser action failures (or the single terminal attribution attempt)
+    // make this a recovery that cannot presently be carried out. Bring the exact tab
+    // forward, but never turn that presentation into another reload or automatic Send.
+    if (why === 'error') {
+      repair.foregroundFailures = (repair.foregroundFailures ?? 0) + 1;
+      if (repair.foregroundFailures >= (repair.reason === 'unattributed' ? 1 : 2)) {
+        forceOpenStalledWorkTabOnce(conversationId, repair.sessionId,
+          `repair:${repair.sessionId}:${repair.episode}`, 'recovery-failed',
+          () => repairsInFlight.get(conversationId) === repair);
+      }
+    }
     if (repair.reason === 'unattributed' && !heldByApproval) repair.state = 'done';
     else {
       repair.state = 'queued';
@@ -11786,6 +11866,7 @@ function clearUnattributedIncident(): void {
   turnRepairSpent.clear();
   assistantRecoveryCancelled.clear();
   pagelessChats.clear();
+  stalledWorkForeground.clear();
   // The told-once set belongs to the incident state this tears down. Left behind, a give-up
   // already reported keeps a later one silent — across a bridge restart in production, and
   // across tests in the suite.
