@@ -35,7 +35,9 @@ jobs:
           npm run verify:privacy
           npm run typecheck
       - name: Focused regression tests (bounded execution)
-        run: npx vitest run --maxWorkers=2 test/goal-settling.test.ts test/handoff-answer-recovery.test.ts test/recorded-handoff-recovery.test.ts test/project-compact-send.test.ts test/windows-admin-launch.test.ts test/renderer-i18n.test.ts test/extension.test.ts test/firefox-extension-package.test.ts test/continuation-marker.test.ts test/continuation.test.ts test/chatgpt-dom-input.test.ts test/prompt-watches.test.ts test/scheduled-runs.test.ts test/control-api-actions.test.ts test/unified-exec-output-stream.test.ts test/feature-parity.test.ts test/stalled-work-foreground.test.ts test/bridge-done-repair-silence.test.ts
+        run: npx vitest run --maxWorkers=2 --exclude test/chatgpt-dom-input.test.ts test/goal-settling.test.ts test/handoff-answer-recovery.test.ts test/recorded-handoff-recovery.test.ts test/project-compact-send.test.ts test/windows-admin-launch.test.ts test/renderer-i18n.test.ts test/extension.test.ts test/firefox-extension-package.test.ts test/continuation-marker.test.ts test/continuation.test.ts test/chatgpt-dom-input.test.ts test/prompt-watches.test.ts test/scheduled-runs.test.ts test/control-api-actions.test.ts test/unified-exec-output-stream.test.ts test/feature-parity.test.ts test/stalled-work-foreground.test.ts test/bridge-done-repair-silence.test.ts
+      - name: Project entry readiness tests (isolated from extension load)
+        run: npx vitest run --maxWorkers=1 test/chatgpt-dom-input.test.ts
 
   browser-extensions:
     needs: checks
