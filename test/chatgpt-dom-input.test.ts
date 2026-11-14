@@ -588,7 +588,10 @@ describe('native Project entry readiness', () => {
     });
     const failure = vi.fn();
     const entered = api.enterProject(entry, undefined, failure);
-    await vi.advanceTimersByTimeAsync(12_500);
+    // Once the Project URL is correct, its editor hydration gets 60 seconds, not
+    // the earlier 12-second navigation deadline. The three fail-closed cases
+    // must advance that full timer before asserting the expected refusal.
+    await vi.advanceTimersByTimeAsync(60_500);
     expect(await entered).toBe(cleared);
     if (cleared) expect(box.textContent).toBe('');
     else {
