@@ -12761,7 +12761,8 @@
     // send immediately with the already-proven target. Fresh worker/resume commands still need
     // the loop below because ChatGPT has not assigned their new conversation id yet.
     if (target) {
-      const acknowledged = await ask({ type: 'ack', id: boot.id, status: 'sent', conversationId: target, agent, client: RUN_ID });
+      const acknowledged = await ask({ type: 'ack', id: boot.id, status: 'sent', conversationId: target, agent, client: RUN_ID,
+        ...(boot.type === 'resume' && acceptedBootstrap ? { destinationMessageId: acceptedBootstrap.messageId } : {}) });
       await publishBootstrapSelection(target);
       await clearAcknowledgedBootstrap(acknowledged);
       return;
@@ -12779,7 +12780,8 @@
     } while (!found && boot.type === 'worker' && alive && reportingBootstrap() && Date.now() < reportBy);
     if (!found || !reportingBootstrap()) return;
     if (boot.type === 'resume') rememberResumeGoalPending(found, boot.id);
-    const report = { type: 'ack', id: boot.id, status: 'sent', conversationId: found, agent, client: RUN_ID };
+    const report = { type: 'ack', id: boot.id, status: 'sent', conversationId: found, agent, client: RUN_ID,
+      ...(boot.type === 'resume' && acceptedBootstrap ? { destinationMessageId: acceptedBootstrap.messageId } : {}) };
     let acknowledged = await ask(report);
     // No answer means the extension's worker did not take it (stopped or restarting), not a refusal:
     // nothing reached its durable outbox, so the report is sent again. A duplicate is harmless; both
