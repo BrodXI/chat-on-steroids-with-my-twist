@@ -1,0 +1,107 @@
+name: Publish tested CoS fork assets
+
+# Manual-only GitHub publishing. Never builds on the user's machine.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: "Exact commit built by all workflows"
+        required: true
+        type: string
+      checks_run:
+        description: "Successful tests run ID"
+        required: true
+        type: string
+      windows_run:
+        description: "Successful Windows build run ID"
+        required: true
+        type: string
+      firefox_sign_run:
+        description: "Successful Mozilla signing run ID"
+        required: true
+        type: string
+      release_tag:
+        description: "New unique fork release tag"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: fork-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Verify matching source and publish GitHub-hosted binaries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SOURCE_SHA: ${{ inputs.source_sha }}
+      CHECKS_RUN: ${{ inputs.checks_run }}
+      WIN_RUN: ${{ inputs.windows_run }}
+      SIGN_RUN: ${{ inputs.firefox_sign_run }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Verify successful source-locked GitHub Actions runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$RELEASE_TAG" =~ ^cos-custom-v[0-9]+\.[0-9]+\.[0-9]+-[a-zA-Z0-9-]+$ ]] || exit 1
+          for run in "$CHECKS_RUN" "$WIN_RUN" "$SIGN_RUN"; do
+            [[ "$run" =~ ^[0-9]+$ ]] || exit 1
+            mapfile -t values < <(gh api "repos/${REPO}/actions/runs/${run}" --jq '[.head_sha, .conclusion] | .[]')
+            if [[ "${values[0]}" != "$SOURCE_SHA" || "${values[1]}" != "success" ]]; then
+              echo "::error::Run $run is not successful at the requested source SHA"
+              exit 1
+            fi
+          done
+          gh api "repos/${REPO}/commits/${SOURCE_SHA}" --jq '.sha'
+          if gh release view "$RELEASE_TAG" -R "$REPO" >/dev/null 2>&1; then
+            echo "::error::Release tag already exists"
+            exit 1
+          fi
+      - name: Fetch built and signed artifacts from GitHub
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$WIN_RUN" -R "$REPO" -p 'fork-windows-x64-*' -D downloads/windows
+          gh run download "$SIGN_RUN" -R "$REPO" -p 'fork-firefox-unlisted-signed-*' -D downloads/firefox
+      - name: Inspect and stage release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p publish
+          mapfile -t installers < <(find downloads/windows -type f -name 'Chat-On-Steroids-Setup-x64.exe')
+          mapfile -t xpis < <(find downloads/firefox -type f -name '*.xpi')
+          if [[ "${#installers[@]}" -ne 1 || "${#xpis[@]}" -ne 1 ]]; then
+            echo "::error::Expected exactly one installer and one signed Firefox XPI"
+            exit 1
+          fi
+          test -s "${installers[0]}"
+          test -s "${xpis[0]}"
+          unzip -tq "${xpis[0]}"
+          if ! unzip -Z1 "${xpis[0]}" | grep -qiE '^META-INF/.*(\.rsa|\.sig)$'; then
+            echo "::error::Firefox package lacks Mozilla signature metadata"
+            exit 1
+          fi
+          cp "${installers[0]}" publish/Chat-On-Steroids-Setup-x64-v2.1.53.exe
+          cp "${xpis[0]}" publish/Chat-On-Steroids-Firefox-Signed-v2.1.53.1.xpi
+          (cd publish && sha256sum *.exe *.xpi > SHA256SUMS.txt)
+          printf 'GitHub-hosted custom build of Chat On Steroids v2.1.53.\n\nSource commit: %s\n\n- Windows x64 installer (unsigned): run %s\n- Mozilla-signed unlisted Firefox extension v2.1.53.1: run %s\n- Typecheck and unit tests: run %s\n\nIncludes SHA256SUMS.txt for integrity verification.\n' "$SOURCE_SHA" "$WIN_RUN" "$SIGN_RUN" "$CHECKS_RUN" > publish/RELEASE_NOTES.md
+      - name: Publish durable release
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" -R "$REPO" \
+            --target "$SOURCE_SHA" \
+            --title 'CoS v2.1.53 Custom Build (Windows x64 + Mozilla-signed Firefox)' \
+            --notes-file publish/RELEASE_NOTES.md \
+            --prerelease \
+            publish/*.exe publish/*.xpi publish/SHA256SUMS.txt
+          gh release view "$RELEASE_TAG" -R "$REPO" --json url,assets --jq '{url,assets:[.assets[].name]}'
