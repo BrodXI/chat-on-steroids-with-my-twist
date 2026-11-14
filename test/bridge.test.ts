@@ -6302,13 +6302,49 @@ describe('delivering a bootstrap', () => {
     const revival = await waitForRevival();
     const claimed = await request('POST', '/commands/redeem', { body: { id: revival.id, client: 'tab-wake-model', conversationId } });
     expect(claimed.body.command).toMatchObject({ type: 'revive', model: 'gpt-5-6', reasoningEffort: 'high' });
+    const report = { id: revival.id, client: 'tab-wake-model', step: 'model-diagnostic',
+      modelSelection: pickerTrace({ phase: 'close', outcome: 'failed', failure: 'mismatch', failedPhase: 'select-effort',
+        failedVersion: '5.6', restore: 'failed', closed: true }) };
+    expect((await request('POST', '/commands/step', { body: { ...report, client: 'someone-else' } })).body.ok).toBe(false);
+    for (const modelSelection of [{ ...report.modelSelection, pageText: 'private-page-text' },
+      { ...report.modelSelection, offered: Array(17).fill(report.modelSelection.offered[0]) },
+      { ...report.modelSelection, requested: { model: 'private\npage text', effort: 'high' } }])
+      expect((await request('POST', '/commands/step', { body: { ...report, modelSelection } })).body.ok).toBe(false);
     // Another page cannot report it: only the page that redeemed the wake speaks for it.
     const foreign = await request('POST', '/commands/step', { body: { id: revival.id, client: 'tab-someone-else', step: 'model-unconfirmed' } });
     expect(foreign.body.ok).not.toBe(true);
     expect(getLog().some(entry => entry.message.includes(`worker-1's wake in ${conversationId} goes out on ChatGPT's current model`))).toBe(false);
+    // The fallback carries its final detail even before a separate model-progress RPC arrives.
     // The picker could not confirm it: the wake goes out anyway, and the app says on what.
-    expect((await request('POST', '/commands/step', { body: { id: revival.id, client: 'tab-wake-model', step: 'model-unconfirmed' } })).body).toEqual({ ok: true });
+    expect((await request('POST', '/commands/step', { body: { ...report, step: 'model-unconfirmed' } })).body).toEqual({ ok: true });
     expect(getLog().some(entry => entry.message.includes(`worker-1's wake in ${conversationId} goes out on ChatGPT's current model: gpt-5-6 high could not be confirmed`))).toBe(true);
+    // A delayed coarse step must not erase the final result or its deduplication/attempt state.
+    await request('POST', '/commands/step', { body: { id: revival.id, client: 'tab-wake-model', step: 'model' } });
+    expect((await request('POST', '/commands/step', { body: { ...report, modelSelection: pickerTrace() } })).body.ok).toBe(false);
+    for (let i = 0; i < 2; i++) expect((await request('POST', '/commands/step', { body: report })).body.ok).toBe(true);
+    const lines = getLog().filter(entry => entry.message.includes(`model selection command=${revival.id}`));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]!.message).toContain('owner=revive:');
+    expect(lines[0]!.message).toContain(':worker-1 ');
+    expect(lines[0]!.message).toContain('"failedPhase":"select-effort"');
+    expect(lines[0]!.message).toContain('"restore":"failed"');
+    expect(lines[0]!.message).not.toMatch(/private-page-text|someone-else/);
+    // The exported, scrubbed report is the artifact the reporter attaches, not the in-memory log.
+    const { renderDiagnosticsReport } = await import('../src/main/diagnostics-report.js');
+    const exported = renderDiagnosticsReport({
+      app: { version: APP_VERSION, electron: '44.3.0', chrome: '152.0', platform: 'win32', arch: 'x64', osRelease: '10.0', locale: 'en-US' },
+      home: 'C:\\Users\\fixture-user', bridge: {}, extension: null, selfTest: null, commands: [], workers: [],
+      sessions: [], projects: [], workerTexts: ['private-page-text'], log: lines[0]!.message, now: Date.now()
+    });
+    expect(exported).toContain(`model selection command=${revival.id}`);
+    expect(exported).toContain('owner=revive:');
+    expect(exported).toContain('"failedPhase":"select-effort"');
+    expect(exported).toContain('"restore":"failed"');
+    expect(exported).toContain('"requested":{"model":"gpt-5-6","effort":"high"}');
+    expect(exported).not.toMatch(/private-page-text|someone-else|fixture-user/);
+
+    expect((await request('POST', '/commands/step', { body: { ...report, modelSelection: pickerTrace() } })).body.ok).toBe(false);
+
   });
 
   it("routes revival to the worker's own chat without opening a duplicate, and treats the typed message as an offer", async () => {
@@ -8855,7 +8891,12 @@ describe('targeted open', () => {
       expect((await request('POST', '/commands/step', { body: { id: first.id, client: 'tab-1', step: stalledAt } })).body).toEqual({ ok: true });
       const prior = new Set(getLog());
 
-      await vi.advanceTimersByTimeAsync(3 * 60_000 + 1_000);
+      if (stalledAt === 'model') {
+        await vi.advanceTimersByTimeAsync(2 * 60_000);
+        expect((await request('POST', '/commands/step', { body: { id: first.id, client: 'tab-1',
+          step: 'model-diagnostic', modelSelection: pickerTrace() } })).body.ok).toBe(true);
+      }
+      await vi.advanceTimersByTimeAsync((stalledAt === 'model' ? 1 : 3) * 60_000 + 1_000);
       await vi.waitFor(() => expect(pendingCommands().some((entry) => entry.id === first.id)).toBe(!released));
       expect(continuationByToken(token)?.state).not.toBe('aborted');
       if (!released) return;
@@ -9019,6 +9060,15 @@ describe('targeted open', () => {
 
 // ------------------------------------------------- where a command stopped (#882 worker-11)
 
+const pickerTrace = (changes: Record<string, unknown> = {}) => ({
+  attempt: 1, phase: 'select-effort', outcome: 'pending', failure: null, failedPhase: null, failedVersion: null,
+  requested: { model: 'gpt-5-6', effort: 'high' }, resolved: { model: 'gpt-5-6-thinking', effort: 'high' },
+  before: { model: 'gpt-5-6-thinking', effort: 'medium' }, selected: null,
+  after: { model: 'gpt-5-6-thinking', effort: 'medium' }, targetVersion: '5.6', observedVersion: '5.6',
+  restore: 'not-needed', closed: null, offered: [{ model: 'gpt-5-6-thinking', effort: 'high', available: true }],
+  offeredTruncated: false, elapsedMs: 200, visibility: 'hidden', ...changes
+});
+
 describe('a command that runs out of time says how far its page got', () => {
   const giveUp = (prior: Set<unknown>, prefix: string) =>
     getLog().find(entry => !prior.has(entry) && entry.message.includes(`gave up on ${prefix}`))?.message ?? '';
@@ -9033,12 +9083,40 @@ describe('a command that runs out of time says how far its page got', () => {
       expect((await step(bootstrap.id, 'composer')).body).toEqual({ ok: true });
       expect((await step(bootstrap.id, 'model')).body).toEqual({ ok: true });
       const prior = new Set(getLog());
-      await vi.advanceTimersByTimeAsync(COMMAND_DEADLINE_MS + 1_000);
+      await vi.advanceTimersByTimeAsync(COMMAND_DEADLINE_MS - 1_000);
+      expect((await request('POST', '/commands/step', { body: { id: bootstrap.id, client: 'tab-1',
+        step: 'model-diagnostic', modelSelection: pickerTrace() } })).body.ok).toBe(true);
+      await vi.advanceTimersByTimeAsync(2_000);
       const message = giveUp(prior, 'worker:');
       expect(message).toContain('did not report back in time');
       expect(message).toContain('last step: choosing the model and reasoning');
+      expect(message).toContain(`model selection command=${bootstrap.id}`);
+      expect(message).toContain('"phase":"select-effort"');
       expect(message).not.toContain('write the audit');
     } finally { vi.useRealTimers(); }
+  });
+
+  it('keeps attempt diagnostics ordered when phase notifications arrive after a result or a retry', async () => {
+    await pair();
+    spawn({ workers: [{ task: 'write the audit' }], caller: { conversationId: PRIME_CHAT } });
+    const bootstrap = await redeem(); await step(bootstrap.id, 'model');
+    const report = (modelSelection: ReturnType<typeof pickerTrace>) => request('POST', '/commands/step', {
+      body: { id: bootstrap.id, client: 'tab-1', step: 'model-diagnostic', modelSelection }
+    });
+    const failed = pickerTrace({ outcome: 'failed', failure: 'mismatch', failedPhase: 'select-effort', failedVersion: '5.6' });
+    expect((await report(failed)).body.ok).toBe(true);
+    expect((await report(pickerTrace())).body.ok).toBe(false);
+    expect((await report(pickerTrace({ attempt: 2 }))).body.ok).toBe(true);
+    expect((await report(failed)).body.ok).toBe(false);
+    const confirmed = pickerTrace({ attempt: 2, phase: 'close', outcome: 'confirmed', closed: true,
+      selected: { model: 'gpt-5-6-thinking', effort: 'high' }, after: { model: 'gpt-5-6-thinking', effort: 'high' } });
+    await step(bootstrap.id, 'composer-after-model');
+    expect((await report(confirmed)).body.ok).toBe(true);
+    expect((await report(confirmed)).body.ok).toBe(true);
+    const lines = getLog().filter(entry => entry.message.includes(`model selection command=${bootstrap.id}`));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]!.message).toContain('"outcome":"failed"');
+    expect(lines[1]!.message).toContain('"outcome":"confirmed"');
   });
 
   // #1086 (2.1.41, Windows VM under load): pages reported "sending the task" and the app gave the workers
@@ -11539,6 +11617,104 @@ describe('unattributed activity recovery', () => {
       // It says why, once, however often the sweep passes (#1086: these exits used to be silent).
       const why = getLog().filter(entry => entry.message.includes(`silence recovery for ${chat}`)).map(entry => entry.message);
       expect(why).toEqual([expect.stringContaining('spent: the silent work is no longer this chat\'s current turn')]);
+    } finally { vi.useRealTimers(); await saveConfig(previous); }
+  });
+
+  it.each(['input:app-continue', 'echoed-by-chatgpt'] as const)('recovers a chat whose newest question is its own delivered Continue that never reached a tool call (%s)', async messageId => {
+    // #2163: both turns of the question the app delivered failed before any tool call, so no
+    // recorded call belonged to that question and the silence check refused the chat for good.
+    const input = await import('../src/main/session/input.js');
+    const { recoveryHeldByCalls, recoveryInputAllowed, sessionInputActivity } = await import('../src/main/bridge.js');
+    input.configureInputDelivery({ recoveryAllowed: recoveryInputAllowed, callsHoldRecovery: recoveryHeldByCalls,
+      activity: sessionInputActivity, applyAutomation: async () => {}, changed: () => {} });
+    const previous = getConfig();
+    await saveConfig({ ...previous, ui: { ...previous.ui, autoContinue: true } });
+    vi.useFakeTimers();
+    try {
+      await pair();
+      const chat = randomUUID(), worked = 'turn-with-calls', continued = 'turn-of-the-continue';
+      await events(chat, [{ kind: 'user_message', messageId: 'goal-question', text: 'Work on the goal', time: Date.now(), authoredNow: true },
+        openTurn(worked)]);
+      await attributed(chat, false, Date.now());
+      await events(chat, [endTurn(worked, 'stalled')]);
+      const session = (await findSessionByConversation(chat))!;
+      await sessionStoreModule.appendEvent(session.id, {
+        kind: 'user_message', source: 'app', time: Date.now(), turnId: messageId.startsWith('input:') ? undefined : continued,
+        inputId: 'app-continue', messageId, message: { text: 'Continue', truncated: false, chars: 8 }
+      });
+      await events(chat, [openTurn(continued)]);
+      let repair = null;
+      for (let pass = 0; pass < 6 && !repair; pass++) {
+        await vi.advanceTimersByTimeAsync(CHAT_SILENCE_MS);
+        await sweepStaleSwarm(Date.now());
+        repair = await maintenance();
+      }
+      expect(repair).toMatchObject({ conversationId: chat, reason: 'silence' });
+      // The reload alone does not restart a chat: the one automatic Continue must follow it.
+      await maintenance(repair!.token, 'reloaded');
+      let continues: Awaited<ReturnType<typeof input.listInputs>> = [];
+      for (let pass = 0; pass < 6 && !continues.length; pass++) {
+        await vi.advanceTimersByTimeAsync(GOAL_QUIET_MS);
+        await sweepStaleSwarm(Date.now());
+        continues = (await input.listInputs()).filter(row => row.sessionId === session.id && row.recovery);
+      }
+      expect(continues).toHaveLength(1);
+    } finally {
+      input.configureInputDelivery(null as never);
+      await writeDurableNow('session-input', []); input.resetInputForTests(); vi.useRealTimers(); await saveConfig(previous);
+    }
+  });
+
+  it('recovers a chat whose newest question is a Goal follow-up its page typed that never reached a tool call', async () => {
+    // #2163 (page-typed path): the follow-up carries no input id, only the recorder's `automatic` mark.
+    const { noteAutomaticReply } = await import('../src/main/session/automatic-replies.js');
+    const previous = getConfig();
+    await saveConfig({ ...previous, ui: { ...previous.ui, autoContinue: true } });
+    vi.useFakeTimers();
+    try {
+      await pair();
+      const chat = randomUUID(), worked = 'turn-with-calls', typed = 'turn-of-the-follow-up';
+      await events(chat, [{ kind: 'user_message', messageId: 'goal-question', text: 'Work on the goal', time: Date.now(), authoredNow: true },
+        openTurn(worked)]);
+      await attributed(chat, false, Date.now());
+      await events(chat, [endTurn(worked, 'stalled')]);
+      noteAutomaticReply(chat, 'Goal follow-up text');
+      await events(chat, [{ kind: 'user_message', messageId: 'page-typed-follow-up', text: 'Goal follow-up text', time: Date.now(), authoredNow: true },
+        openTurn(typed)]);
+      let repair = null;
+      for (let pass = 0; pass < 6 && !repair; pass++) {
+        await vi.advanceTimersByTimeAsync(CHAT_SILENCE_MS);
+        await sweepStaleSwarm(Date.now());
+        repair = await maintenance();
+      }
+      expect(repair).toMatchObject({ conversationId: chat, reason: 'silence' });
+    } finally { vi.useRealTimers(); await saveConfig(previous); }
+  });
+
+  it('still leaves a chat alone whose newest question is native and never reached a tool call', async () => {
+    const previous = getConfig();
+    await saveConfig({ ...previous, ui: { ...previous.ui, autoContinue: true } });
+    vi.useFakeTimers();
+    try {
+      await pair();
+      const chat = randomUUID(), worked = 'turn-with-calls', native = 'turn-of-a-native-question';
+      await events(chat, [{ kind: 'user_message', messageId: 'goal-question', text: 'Work on the goal', time: Date.now(), authoredNow: true },
+        openTurn(worked)]);
+      await attributed(chat, false, Date.now());
+      await events(chat, [endTurn(worked, 'stalled')]);
+      const session = (await findSessionByConversation(chat))!;
+      await sessionStoreModule.appendEvent(session.id, {
+        kind: 'user_message', source: 'extension', time: Date.now(), turnId: native, messageId: 'typed-by-the-person',
+        message: { text: 'What do you think?', truncated: false, chars: 18 }
+      });
+      await events(chat, [openTurn(native)]);
+      for (let pass = 0; pass < 4; pass++) {
+        await vi.advanceTimersByTimeAsync(CHAT_SILENCE_MS);
+        await sweepStaleSwarm(Date.now());
+        expect(await maintenance()).toBeNull();
+      }
+      const why = getLog().filter(entry => entry.message.includes(`silence recovery for ${chat}`)).map(entry => entry.message);
+      expect(why).toEqual([expect.stringContaining('has no tool call recorded')]);
     } finally { vi.useRealTimers(); await saveConfig(previous); }
   });
 
@@ -18941,6 +19117,36 @@ describe('native ChatGPT Project for a new CoS project', () => {
     await saveConfig({ ...suiteConfig, roots: [{ name: 'project', path: folder }] });
     return addProject(folder);
   }
+
+  it('keeps browser status available without declaring project creation complete when its catalog cannot be read', async () => {
+    await pair();
+    const project = await newProject('unavailable-catalog');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const file = path.join(dir, 'state', 'projects.json');
+    const saved = await fs.readFile(file, 'utf8');
+    const input = await import('../src/main/session/input.js');
+    const projectInput = await input.enqueueInput({ id: randomUUID(), projectId: project.id, sessionId: null, text: 'Project input', mode: 'auto', dueAt: 0, model: null, reasoningEffort: null });
+    const unrelated = await input.enqueueInput({ id: randomUUID(), projectId: null, sessionId: null, text: 'Unrelated input', mode: 'auto', dueAt: 0, model: null, reasoningEffort: null });
+    await fs.writeFile(file, '{"unfinished":');
+    try {
+      // A protocol-14 companion would mistake null for completion and drop its helper owner.
+      expect((await request('POST', '/status', { protocol: 14, body: { openConversations: [] } })).status).toBe(426);
+      const status = await request('POST', '/status', { body: { openConversations: [] } });
+      expect(status.status).toBe(200);
+      expect(status.body).toMatchObject({ ok: true, projectCreateRequests: null });
+      expect(Array.isArray(status.body.stopTurns)).toBe(true);
+      expect(Array.isArray(status.body.inputs)).toBe(true);
+      expect(status.body.inputs).toContainEqual(expect.objectContaining({ id: unrelated.id }));
+      expect(status.body.inputs).not.toContainEqual(expect.objectContaining({ id: projectInput.id }));
+      const pending = await request('POST', '/project-create', { body: { action: 'pending' } });
+      expect(pending.status).toBe(200);
+      expect(pending.body.requests).toBeNull();
+      expect(await fs.readFile(file, 'utf8')).toBe('{"unfinished":');
+    } finally { await fs.writeFile(file, saved); }
+    const recovered = await request('POST', '/status', { body: { openConversations: [] } });
+    expect(recovered.body.projectCreateRequests).toContainEqual(expect.objectContaining({ projectId: project.id, state: 'requested' }));
+  });
 
   it('lets only the page that claimed and armed it report the Project id', async () => {
     await pair();
