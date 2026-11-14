@@ -20,6 +20,11 @@ on:
         description: "Successful Mozilla signing run ID"
         required: true
         type: string
+      firefox_build:
+        description: "Signed Firefox build suffix (1-999), matching the signing run"
+        required: true
+        default: '2'
+        type: string
       release_tag:
         description: "New unique fork release tag"
         required: true
@@ -45,6 +50,7 @@ jobs:
       CHECKS_RUN: ${{ inputs.checks_run }}
       WIN_RUN: ${{ inputs.windows_run }}
       SIGN_RUN: ${{ inputs.firefox_sign_run }}
+      FIREFOX_BUILD: ${{ inputs.firefox_build }}
       RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
       - name: Verify successful source-locked GitHub Actions runs
@@ -52,6 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$FIREFOX_BUILD" =~ ^[1-9][0-9]{0,2}$ ]] || exit 1
           [[ "$RELEASE_TAG" =~ ^cos-custom-v[0-9]+\.[0-9]+\.[0-9]+-[a-zA-Z0-9-]+$ ]] || exit 1
           for run in "$CHECKS_RUN" "$WIN_RUN" "$SIGN_RUN"; do
             [[ "$run" =~ ^[0-9]+$ ]] || exit 1
@@ -86,14 +93,19 @@ jobs:
           test -s "${installers[0]}"
           test -s "${xpis[0]}"
           unzip -tq "${xpis[0]}"
+          actual_version="$(unzip -p "${xpis[0]}" manifest.json | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')"
+          if [[ "$actual_version" != "2.1.53.${FIREFOX_BUILD}" ]]; then
+            echo "::error::Signed Firefox package version ${actual_version} does not match 2.1.53.${FIREFOX_BUILD}"
+            exit 1
+          fi
           if ! unzip -Z1 "${xpis[0]}" | grep -qiE '^META-INF/.*(\.rsa|\.sig)$'; then
             echo "::error::Firefox package lacks Mozilla signature metadata"
             exit 1
           fi
           cp "${installers[0]}" publish/Chat-On-Steroids-Setup-x64-v2.1.53.exe
-          cp "${xpis[0]}" publish/Chat-On-Steroids-Firefox-Signed-v2.1.53.1.xpi
+          cp "${xpis[0]}" publish/Chat-On-Steroids-Firefox-Signed-v2.1.53.${FIREFOX_BUILD}.xpi
           (cd publish && sha256sum *.exe *.xpi > SHA256SUMS.txt)
-          printf 'GitHub-hosted custom build of Chat On Steroids v2.1.53.\n\nSource commit: %s\n\n- Windows x64 installer (unsigned): run %s\n- Mozilla-signed unlisted Firefox extension v2.1.53.1: run %s\n- Typecheck and unit tests: run %s\n\nIncludes SHA256SUMS.txt for integrity verification.\n' "$SOURCE_SHA" "$WIN_RUN" "$SIGN_RUN" "$CHECKS_RUN" > publish/RELEASE_NOTES.md
+          printf 'GitHub-hosted custom build of Chat On Steroids v2.1.53.\n\nSource commit: %s\n\n- Windows x64 installer (unsigned): run %s\n- Mozilla-signed unlisted Firefox extension v2.1.53.%s: run %s\n- Typecheck and unit tests: run %s\n\nIncludes SHA256SUMS.txt for integrity verification.\n' "$SOURCE_SHA" "$WIN_RUN" "$FIREFOX_BUILD" "$SIGN_RUN" "$CHECKS_RUN" > publish/RELEASE_NOTES.md
       - name: Publish durable release
         shell: bash
         run: |
