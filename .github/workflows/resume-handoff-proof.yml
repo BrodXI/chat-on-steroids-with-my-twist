@@ -5,7 +5,7 @@ on:
 permissions:
   contents: write
 concurrency:
-  group: handoff-candidate-\${{ github.ref }}
+  group: handoff-candidate-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   checks:
@@ -62,8 +62,8 @@ jobs:
       - run: node scripts/build-fork-browser-extensions.mjs
       - name: Validate Mozilla signing identity
         env:
-          WEB_EXT_API_KEY: \${{ secrets.AMO_JWT_ISSUER }}
-          WEB_EXT_API_SECRET: \${{ secrets.AMO_JWT_SECRET }}
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           set -euo pipefail
           test -n "$WEB_EXT_API_KEY" && test -n "$WEB_EXT_API_SECRET"
@@ -80,8 +80,8 @@ jobs:
           unzip -tq release/Chat-On-Steroids-Firefox-Source.zip
       - name: Request Mozilla unlisted signing
         env:
-          WEB_EXT_API_KEY: \${{ secrets.AMO_JWT_ISSUER }}
-          WEB_EXT_API_SECRET: \${{ secrets.AMO_JWT_SECRET }}
+          WEB_EXT_API_KEY: ${{ secrets.AMO_JWT_ISSUER }}
+          WEB_EXT_API_SECRET: ${{ secrets.AMO_JWT_SECRET }}
         run: |
           mkdir -p release/firefox-signed
           npx --yes web-ext@10.7.0 sign --channel=unlisted --source-dir release/firefox-extension --upload-source-code release/Chat-On-Steroids-Firefox-Source.zip --artifacts-dir release/firefox-signed --approval-timeout 1500000 --no-input
@@ -103,7 +103,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      GH_TOKEN: \${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
       TAG: cos-custom-v2.1.53-20261114-handoff-proof
     steps:
       - uses: actions/download-artifact@v4
@@ -133,5 +133,5 @@ jobs:
           cp "$xpi" publish/Chat-On-Steroids-Firefox-Signed-v2.1.53.3.xpi
           cp "$chrome" publish/Chat-On-Steroids-Chrome-Extension.zip
           (cd publish && sha256sum *.exe *.xpi *.zip > SHA256SUMS.txt)
-          printf 'GitHub-only source-pinned handoff build at %s. Installer is unsigned; Firefox extension is Mozilla signed.\n' "\${{ github.sha }}" > publish/RELEASE_NOTES.md
-          gh release create "$TAG" -R "\${{ github.repository }}" --target "\${{ github.sha }}" --title 'CoS v2.1.53 Handoff Proof Build' --notes-file publish/RELEASE_NOTES.md --prerelease publish/*.exe publish/*.xpi publish/*.zip publish/SHA256SUMS.txt
+          printf 'GitHub-only source-pinned handoff build at %s. Installer is unsigned; Firefox extension is Mozilla signed.\n' "${{ github.sha }}" > publish/RELEASE_NOTES.md
+          gh release create "$TAG" -R "${{ github.repository }}" --target "${{ github.sha }}" --title 'CoS v2.1.53 Handoff Proof Build' --notes-file publish/RELEASE_NOTES.md --prerelease publish/*.exe publish/*.xpi publish/*.zip publish/SHA256SUMS.txt
