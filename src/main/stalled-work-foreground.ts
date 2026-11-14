@@ -6,6 +6,8 @@
  */
 export const WORK_NO_PROGRESS_REVEAL_MS = 10 * 60_000;
 export const FOREGROUND_REVEAL_RETRY_MS = 60_000;
+/** Never steal focus from dozens of simultaneously stalled workers in one burst. */
+export const FOREGROUND_GLOBAL_FOCUS_COOLDOWN_MS = 30_000;
 export const FOREGROUND_REVEAL_MAX_ATTEMPTS = 2;
 
 export function workHasBeenQuietLongEnough(
@@ -31,10 +33,13 @@ type Attempt = {
  */
 export class StalledWorkForegroundGate {
   private readonly attempts = new Map<string, Attempt>();
+  private lastGlobalFocusAt: number | null = null;
 
   claim(conversationId: string, episode: string, now = Date.now()): boolean {
     if (!conversationId || !episode || !Number.isFinite(now)) return false;
     const prior = this.attempts.get(conversationId);
+    if (this.lastGlobalFocusAt !== null &&
+        now - this.lastGlobalFocusAt < FOREGROUND_GLOBAL_FOCUS_COOLDOWN_MS) return false;
     if (prior?.episode === episode && (prior.state !== 'failed' ||
         prior.attempts >= FOREGROUND_REVEAL_MAX_ATTEMPTS ||
         now - prior.at < FOREGROUND_REVEAL_RETRY_MS)) return false;
@@ -47,6 +52,7 @@ export class StalledWorkForegroundGate {
     // Map order tracks the most recently used episode, bounding process memory.
     this.attempts.delete(conversationId);
     this.attempts.set(conversationId, next);
+    this.lastGlobalFocusAt = now;
     if (this.attempts.size > 500) this.attempts.delete(this.attempts.keys().next().value!);
     return true;
   }
@@ -58,5 +64,5 @@ export class StalledWorkForegroundGate {
     }
   }
 
-  clear(): void { this.attempts.clear(); }
+  clear(): void { this.attempts.clear(); this.lastGlobalFocusAt = null; }
 }
