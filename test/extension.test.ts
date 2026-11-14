@@ -2120,7 +2120,7 @@ describe('active agent tab discard protection', () => {
     expect(session.data.discardProtectedTabs).toEqual({});
   });
 
-  it('closes finished managed chats including an idle selected tab', async () => {
+  it('closes finished managed chats but keeps the selected page', async () => {
     const OLD_WORKER = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
     const COMPACTED = 'cccccccc-dddd-4eee-8fff-000000000000';
     const fetch = vi.fn(async (input: string) => {
@@ -2156,7 +2156,8 @@ describe('active agent tab discard protection', () => {
     });
 
     await worker.fireAlarm();
-    expect(worker.tabsRemove.mock.calls.map((call) => call[0]).sort()).toEqual([92, 93, 94]);
+    expect(worker.tabsRemove.mock.calls.map((call) => call[0]).sort()).toEqual([92, 94]);
+    expect(worker.tabsRemove).not.toHaveBeenCalledWith(93);
     // The live prime chat is still protected, never closed.
     expect(worker.tabsUpdate).toHaveBeenCalledWith(91, { autoDiscardable: false });
   });
@@ -3057,7 +3058,7 @@ describe('app-owned retained tab pool', () => {
   });
   it('never removes copies of a protected active conversation', async () => {
     const worker = await budget({ protectDuplicate: true, retired: true });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0]).sort()).toEqual([2, 5]);
+    expect(worker.tabsRemove.mock.calls.map(call => call[0]).sort()).toEqual([2]);
   });
   it('orders terminal retirement by work time without evicting selected or waiting chats', async () => {
     const worker = await budget({ reverseActivity: true, recent: 5, retired: true });
