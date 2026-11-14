@@ -7816,6 +7816,8 @@ export const WAKE_GRACE_MS = 90_000;
 /** The sweep ticks every 30 seconds; a gap this long means nothing ran in between. */
 const WAKE_GAP_MS = 2 * 60_000;
 let lastRecoverySweepTickAt = 0;
+/** Suspend forced foreground reveals briefly after the computer wakes. */
+let stalledForegroundWakeGraceUntil = 0;
 /**
  * Called on every tick of the recovery sweep's timer. While the computer sleeps (or this process
  * is stopped) no timer fires, so on waking every activity deadline is long past and the first
@@ -7828,6 +7830,7 @@ export function noteRecoverySweepTick(now: number): boolean {
   const gap = lastRecoverySweepTickAt === 0 ? 0 : now - lastRecoverySweepTickAt;
   lastRecoverySweepTickAt = now;
   if (gap < WAKE_GAP_MS) return false;
+  stalledForegroundWakeGraceUntil = Math.max(stalledForegroundWakeGraceUntil, now + WAKE_GRACE_MS);
   let held = 0;
   for (const grant of activeUntil.values()) {
     if (grant.until >= now + WAKE_GRACE_MS) continue;
@@ -9183,6 +9186,10 @@ function forceOpenStalledWorkTabOnce(
   current: () => boolean = () => true
 ): boolean {
   const now = Date.now();
+  // A suspended machine can wake with hours of stale timestamps. Wait for the ordinary
+  // ninety-second wake grace instead of suddenly foregrounding all its previous work.
+  if (why !== 'recovery-failed' && (now < stalledForegroundWakeGraceUntil ||
+      (lastRecoverySweepTickAt > 0 && now - lastRecoverySweepTickAt >= WAKE_GAP_MS))) return false;
   // Respect an explicit user close, Block/Stop, provider backoff, and the selected browser.
   // A running tool or approval card is progress requiring time or user action, not a stuck page.
   if (!tabRecoveryWanted(conversationId) || isChatBlocked(conversationId) ||
@@ -11867,6 +11874,7 @@ function clearUnattributedIncident(): void {
   assistantRecoveryCancelled.clear();
   pagelessChats.clear();
   stalledWorkForeground.clear();
+  stalledForegroundWakeGraceUntil = 0;
   // The told-once set belongs to the incident state this tears down. Left behind, a give-up
   // already reported keeps a later one silent — across a bridge restart in production, and
   // across tests in the suite.
