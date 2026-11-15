@@ -3928,5 +3928,15 @@
   "Checking installed plugins…": "正在檢查已安裝的外掛程式…",
   "Check the Core, Desktop and Plugins tools in ChatGPT": "檢查 ChatGPT 中的 Core、Desktop 和 Plugins 工具",
   "Close plugin refresh progress": "關閉外掛程式重新整理進度",
-  "Installed plugin refresh steps": "已安裝外掛程式的重新整理步驟"
+  "Installed plugin refresh steps": "已安裝外掛程式的重新整理步驟",
+  "Automatic tab memory saver": "自動節省分頁記憶體",
+  "Close idle CoS-managed ChatGPT tabs after this much inactivity. Off disables idle closing; finished workers, superseded handoffs and duplicate tabs may still close safely. Your personal browser tabs are never targeted.": "在指定閒置時間後關閉 CoS 管理的 ChatGPT 分頁。關閉此選項後，已完成的工作、已取代的交接和重複分頁仍可能安全關閉。個人分頁不受影響。",
+  "Off for idle tabs": "不自動關閉閒置分頁",
+  "After 2 minutes": "2 分鐘後",
+  "After 5 minutes (default)": "5 分鐘後（預設）",
+  "After 10 minutes": "10 分鐘後",
+  "After 15 minutes": "15 分鐘後",
+  "After 30 minutes": "30 分鐘後",
+  "After 60 minutes": "60 分鐘後",
+  "Cleanup waits for verified finished or idle work and exact browser proof that the page is safe to close. Foreground tabs, active turns, recovery, and unsent drafts are protected.": "只有確認工作結束或閒置且瀏覽器驗證可以安全關閉時才會清理。作用中的分頁、進行中的回覆、復原程序和未傳送的草稿均受保護。"
 }

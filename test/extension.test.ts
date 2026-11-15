@@ -2120,7 +2120,7 @@ describe('active agent tab discard protection', () => {
     expect(session.data.discardProtectedTabs).toEqual({});
   });
 
-  it('closes finished managed chats including an idle selected tab', async () => {
+  it('closes finished managed chats but keeps the selected page', async () => {
     const OLD_WORKER = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
     const COMPACTED = 'cccccccc-dddd-4eee-8fff-000000000000';
     const fetch = vi.fn(async (input: string) => {
@@ -2156,7 +2156,8 @@ describe('active agent tab discard protection', () => {
     });
 
     await worker.fireAlarm();
-    expect(worker.tabsRemove.mock.calls.map((call) => call[0]).sort()).toEqual([92, 93, 94]);
+    expect(worker.tabsRemove.mock.calls.map((call) => call[0]).sort()).toEqual([92, 94]);
+    expect(worker.tabsRemove).not.toHaveBeenCalledWith(93);
     // The live prime chat is still protected, never closed.
     expect(worker.tabsUpdate).toHaveBeenCalledWith(91, { autoDiscardable: false });
   });
@@ -3028,9 +3029,10 @@ describe('app-owned retained tab pool', () => {
     expect(worker.tabsRemove).not.toHaveBeenCalledWith(1); // live app work
     expect(worker.tabsRemove).not.toHaveBeenCalledWith(6); // unrelated manual chat
   });
-  it('preserves a user-pinned duplicate while still retiring an unpinned terminal worker', async () => {
+  it('preserves pinned duplicates and the selected terminal worker tab', async () => {
     const worker = await budget({ pinned: 4, retired: true });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([2, 5]);
+    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([2]);
+    expect(worker.tabsRemove).not.toHaveBeenCalledWith(5);
   });
   it('retires explicitly terminal workers while preserving drafts and live work', async () => {
     const worker = await budget({ keep: 20, retired: true, safe: n => n !== 5 });
@@ -3056,11 +3058,11 @@ describe('app-owned retained tab pool', () => {
   });
   it('never removes copies of a protected active conversation', async () => {
     const worker = await budget({ protectDuplicate: true, retired: true });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0]).sort()).toEqual([2, 5]);
+    expect(worker.tabsRemove.mock.calls.map(call => call[0]).sort()).toEqual([2]);
   });
-  it('orders terminal retirement by work time without evicting other waiting chats', async () => {
+  it('orders terminal retirement by work time without evicting selected or waiting chats', async () => {
     const worker = await budget({ reverseActivity: true, recent: 5, retired: true });
-    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([4, 5, 2]);
+    expect(worker.tabsRemove.mock.calls.map(call => call[0])).toEqual([4, 2]);
   });
   it('retains drafts/unreadable pages and refuses a navigated candidate', async () => {
     const worker = await budget({ safe: n => n !== 3 && n !== 4, changed: 5, retired: true });
@@ -6418,18 +6420,24 @@ it.each([
   { name: 'future timestamp', age: -1, close: true },
   { name: 'read and left before proof', age: 600_000, freshAt: 1, close: false },
   { name: 'read and left during proof', age: 600_000, freshAt: 2, close: false },
+  { name: 'tab focused just before proof', age: 600_000, focusAt: 1, close: false },
+  { name: 'tab focused during proof', age: 600_000, focusAt: 2, close: false },
+  { name: 'selected terminal page remains', age: 600_000, active: true, retired: true, close: false },
   { name: 'explicit retired cleanup', age: 0, retired: true, close: true },
   { name: 'surplus copy cleanup', age: 10, duplicate: true, close: true }
 ])('honors tab-local reading intent without changing separate retirement authority: $name', async scenario => {
   const conversationId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
   const now = 1_800_000_000_000;
-  const tab = { id: 71, url: `https://chatgpt.com/c/${conversationId}`, active: false, pinned: false,
+  const tab = { id: 71, url: `https://chatgpt.com/c/${conversationId}`, active: scenario.active === true, pinned: false,
     lastAccessed: 'age' in scenario ? now - scenario.age! : scenario.timestamp };
   const remove = vi.fn();
   const proof = vi.fn(async () => ({ safe: true, conversationId, navigationEpoch: 0 }));
   let snapshots = 0;
-  const get = vi.fn(async () => ({ ...tab,
-    lastAccessed: ++snapshots === scenario.freshAt ? now : tab.lastAccessed }));
+  const get = vi.fn(async () => {
+    const seen = ++snapshots;
+    return { ...tab, active: seen === scenario.focusAt ? true : tab.active,
+      lastAccessed: seen === scenario.freshAt ? now : tab.lastAccessed };
+  });
   const code = backgroundSource.slice(backgroundSource.indexOf('async function pruneManagedTabs('),
     backgroundSource.indexOf('\nfunction maintain(', backgroundSource.indexOf('async function pruneManagedTabs(')));
   const prune = vm.runInNewContext(`${code}\npruneManagedTabs`, {

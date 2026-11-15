@@ -30,3 +30,16 @@ describe('the automatic Continue text', () => {
     expect(recoveryMessage({ custom: 'x'.repeat(CUSTOM_CONTINUE_MAX_CHARS + 50) }).indexOf(' ')).toBe(CUSTOM_CONTINUE_MAX_CHARS);
   });
 });
+
+describe('tool-free GPT idle recovery deadline', () => {
+  it('waits twelve minutes without genuine progress, and then allows recovery', async () => {
+    const { idleRecoveryDue, IDLE_RECOVERY_AFTER_MS, IDLE_RECOVERY_POST_RELOAD_MS } = await import('../src/shared/recovery.js');
+    expect(IDLE_RECOVERY_AFTER_MS).toBe(12 * 60_000);
+    expect(IDLE_RECOVERY_POST_RELOAD_MS).toBe(60_000);
+    expect(idleRecoveryDue(1000, 1000 + IDLE_RECOVERY_AFTER_MS - 1)).toBe(false);
+    expect(idleRecoveryDue(1000, 1000 + IDLE_RECOVERY_AFTER_MS)).toBe(true);
+    expect(idleRecoveryDue(1000, 1000 + 15 * 60_000)).toBe(true);
+    expect(idleRecoveryDue(1000, 999)).toBe(false);
+    expect(idleRecoveryDue(NaN, 1000000)).toBe(false);
+  });
+});

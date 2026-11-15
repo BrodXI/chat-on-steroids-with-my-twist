@@ -210,6 +210,21 @@ describe('settings migration', () => {
     expect(loaded.ui.backgroundPlacement).toBe('window');
     expect(loaded.ui.backgroundChats).toBe(true);
   });
+  it('defaults idle cleanup to five minutes, persists supported choices and rejects unsafe values', async () => {
+    expect(defaultConfig().ui.idleTabCloseMinutes).toBe(5);
+    const legacy = defaultConfig();
+    delete legacy.ui.idleTabCloseMinutes;
+    await fs.writeFile(path.join(dir, 'config.json'), JSON.stringify(legacy), 'utf8');
+    expect((await loadConfig()).ui.idleTabCloseMinutes).toBe(5);
+    for (const idleTabCloseMinutes of [0, 2, 5, 10, 15, 30, 60] as const) {
+      await saveConfig({ ...defaultConfig(), ui: { ...defaultConfig().ui, idleTabCloseMinutes } });
+      expect((await loadConfig()).ui.idleTabCloseMinutes).toBe(idleTabCloseMinutes);
+    }
+    for (const invalid of [-1, 1, 1000]) {
+      await fs.writeFile(path.join(dir, 'config.json'), JSON.stringify({ ...defaultConfig(), ui: { ...defaultConfig().ui, idleTabCloseMinutes: invalid } }), 'utf8');
+      expect((await loadConfig()).ui.idleTabCloseMinutes).toBe(5);
+    }
+  });
   it('defaults login startup off for fresh and legacy settings independently of auto-connect', async () => {
     expect(defaultConfig().ui.startAtLogin).toBe(false);
     const legacy = defaultConfig();

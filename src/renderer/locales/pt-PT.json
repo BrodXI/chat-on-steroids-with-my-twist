@@ -4096,5 +4096,15 @@
   "Checking installed plugins…": "A verificar os plugins instalados…",
   "Check the Core, Desktop and Plugins tools in ChatGPT": "Verificar as ferramentas Core, Desktop e Plugins no ChatGPT",
   "Close plugin refresh progress": "Fechar o progresso da atualização de plugins",
-  "Installed plugin refresh steps": "Passos de atualização dos plugins instalados"
+  "Installed plugin refresh steps": "Passos de atualização dos plugins instalados",
+  "Automatic tab memory saver": "Poupança automática de memória dos separadores",
+  "Close idle CoS-managed ChatGPT tabs after this much inactivity. Off disables idle closing; finished workers, superseded handoffs and duplicate tabs may still close safely. Your personal browser tabs are never targeted.": "Fecha os separadores ChatGPT inativos geridos pelo CoS após o período escolhido. Desativar não impede o fecho seguro de trabalhos concluídos, transferências substituídas e duplicados. Os separadores pessoais não são afetados.",
+  "Off for idle tabs": "Desativado para separadores inativos",
+  "After 2 minutes": "Após 2 minutos",
+  "After 5 minutes (default)": "Após 5 minutos (predefinição)",
+  "After 10 minutes": "Após 10 minutos",
+  "After 15 minutes": "Após 15 minutos",
+  "After 30 minutes": "Após 30 minutos",
+  "After 60 minutes": "Após 60 minutos",
+  "Cleanup waits for verified finished or idle work and exact browser proof that the page is safe to close. Foreground tabs, active turns, recovery, and unsent drafts are protected.": "A limpeza só ocorre após confirmar que o trabalho terminou ou está inativo e que o navegador permite fechar em segurança. Os separadores em primeiro plano, as respostas em curso, a recuperação e os rascunhos não enviados são protegidos."
 }

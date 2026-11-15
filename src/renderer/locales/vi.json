@@ -3928,5 +3928,15 @@
   "Checking installed plugins…": "Đang kiểm tra các plugin đã cài đặt…",
   "Check the Core, Desktop and Plugins tools in ChatGPT": "Kiểm tra công cụ Core, Desktop và Plugins trong ChatGPT",
   "Close plugin refresh progress": "Đóng tiến trình làm mới plugin",
-  "Installed plugin refresh steps": "Các bước làm mới plugin đã cài đặt"
+  "Installed plugin refresh steps": "Các bước làm mới plugin đã cài đặt",
+  "Automatic tab memory saver": "Tự động tiết kiệm bộ nhớ tab",
+  "Close idle CoS-managed ChatGPT tabs after this much inactivity. Off disables idle closing; finished workers, superseded handoffs and duplicate tabs may still close safely. Your personal browser tabs are never targeted.": "Đóng tab ChatGPT do CoS quản lý khi không hoạt động quá thời gian đã chọn. Tắt tùy chọn vẫn cho phép đóng an toàn tác vụ đã hoàn tất, phiên bàn giao cũ và tab trùng. Tab cá nhân không bị ảnh hưởng.",
+  "Off for idle tabs": "Tắt cho tab không hoạt động",
+  "After 2 minutes": "Sau 2 phút",
+  "After 5 minutes (default)": "Sau 5 phút (mặc định)",
+  "After 10 minutes": "Sau 10 phút",
+  "After 15 minutes": "Sau 15 phút",
+  "After 30 minutes": "Sau 30 phút",
+  "After 60 minutes": "Sau 60 phút",
+  "Cleanup waits for verified finished or idle work and exact browser proof that the page is safe to close. Foreground tabs, active turns, recovery, and unsent drafts are protected.": "Chỉ dọn dẹp sau khi xác nhận công việc hoàn tất hoặc không hoạt động và trình duyệt cho phép đóng an toàn. Tab đang xem, phản hồi đang chạy, khôi phục và bản nháp chưa gửi đều được bảo vệ."
 }

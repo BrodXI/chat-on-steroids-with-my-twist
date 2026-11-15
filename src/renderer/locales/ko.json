@@ -3928,5 +3928,15 @@
   "Checking installed plugins…": "설치된 플러그인 확인 중…",
   "Check the Core, Desktop and Plugins tools in ChatGPT": "ChatGPT에서 Core, Desktop 및 Plugins 도구 확인",
   "Close plugin refresh progress": "플러그인 새로 고침 진행 상황 닫기",
-  "Installed plugin refresh steps": "설치된 플러그인 새로 고침 단계"
+  "Installed plugin refresh steps": "설치된 플러그인 새로 고침 단계",
+  "Automatic tab memory saver": "탭 메모리 자동 절약",
+  "Close idle CoS-managed ChatGPT tabs after this much inactivity. Off disables idle closing; finished workers, superseded handoffs and duplicate tabs may still close safely. Your personal browser tabs are never targeted.": "CoS가 관리하는 ChatGPT 탭이 지정된 시간 동안 유휴 상태이면 닫습니다. 꺼 두어도 완료된 작업, 교체된 인계 및 중복 탭은 안전하게 닫힐 수 있습니다. 개인 탭은 대상이 아닙니다.",
+  "Off for idle tabs": "유휴 탭 자동 종료 끄기",
+  "After 2 minutes": "2분 후",
+  "After 5 minutes (default)": "5분 후(기본값)",
+  "After 10 minutes": "10분 후",
+  "After 15 minutes": "15분 후",
+  "After 30 minutes": "30분 후",
+  "After 60 minutes": "60분 후",
+  "Cleanup waits for verified finished or idle work and exact browser proof that the page is safe to close. Foreground tabs, active turns, recovery, and unsent drafts are protected.": "작업 완료 또는 유휴 상태와 브라우저의 안전한 종료 확인 후에만 정리합니다. 현재 탭, 실행 중인 응답, 복구 및 전송하지 않은 초안은 보호됩니다."
 }

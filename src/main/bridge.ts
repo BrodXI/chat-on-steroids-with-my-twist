@@ -68,7 +68,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { StalledWorkForegroundGate, workHasBeenQuietLongEnough } from './stalled-work-foreground.js';
 import http from 'node:http';
 import type { BridgeStatus, CompanionDiagnostics, CompanionEnvironment, CompanionPageDiagnostics, CompanionTabDiagnostics, CompanionTraceEntry } from '../shared/types.js';
-import { BROWSER_PICKUP_ATTEMPT_LIMIT, BROWSER_PICKUP_BACKOFF_MS, BROWSER_PICKUP_MAX_ATTEMPTS, BROWSER_PICKUP_SLOW_MS, browserPickupDelay, recoveryBusyMs } from '../shared/recovery.js';
+import { BROWSER_PICKUP_ATTEMPT_LIMIT, BROWSER_PICKUP_BACKOFF_MS, BROWSER_PICKUP_MAX_ATTEMPTS, BROWSER_PICKUP_SLOW_MS, browserPickupDelay, recoveryBusyMs, idleRecoveryDue, IDLE_RECOVERY_AFTER_MS, IDLE_RECOVERY_POST_RELOAD_MS } from '../shared/recovery.js';
 import { CHAT_ACTIVE_MS, CHAT_SILENCE_MS, continuationMarkerOf, isReasoningEffort, normalizedToolOutcome, toolCallSummary, unescapeMarkdown,
   type ReasoningEffort, type SessionEvent, type SessionOrigin, type StoredText, type ToolCallRecord } from '../shared/session.js';
 import { blockedChatIds, isChatBlocked, chatBlockedAt } from './session/blocked-chats.js';
@@ -7866,7 +7866,9 @@ function grantActivity(conversationId: string, sessionId: string, at = Date.now(
   // this is a thinking turn, or the window would snap back to two minutes mid-thought.
   const deliberate = ownership.deliberate || (previous?.sessionId === sessionId && previous.turnId === ownership.turnId && previous.deliberate);
   activeUntil.set(conversationId, { sessionId, evidenceAt,
-    until: evidenceAt + (ownership.model === 'pro' ? PRO_SILENCE_MS : deliberate ? DELIBERATE_SILENCE_MS : window),
+    // An unobserved tool-free turn needs a fallback checkpoint at 12 minutes.
+    // MCP-backed deliberate reasoning still keeps its 20-minute wait in the sweep.
+    until: evidenceAt + Math.min(IDLE_RECOVERY_AFTER_MS, ownership.model === 'pro' ? PRO_SILENCE_MS : deliberate ? DELIBERATE_SILENCE_MS : window),
     turnId: ownership.turnId, model: ownership.model,
     ...(mcpBacked ? { mcpBacked: true } : {}), ...(deliberate ? { deliberate: true as const } : {}) });
   awaitingReturn.delete(conversationId);
@@ -8902,8 +8904,12 @@ async function silenceRepairCurrent(conversationId: string, repair: Repair): Pro
 
 /** Scheduler, page return and pre-action claim share the same durable source verdict. */
 async function silenceSourceCurrent(conversationId: string, grant: ActivityGrant): Promise<boolean> {
-  if (!grant.turnId || !await answerHasMcpCall(grant.sessionId, conversationId, grant.turnId) ||
-      await readCompletedFinal(grant.sessionId, conversationId, grant.turnId)) return false;
+  if (!grant.turnId || await readCompletedFinal(grant.sessionId, conversationId, grant.turnId)) return false;
+  // A no-tool GPT turn can be a real running generation. A known question and the
+  // full twelve-minute silence window authorize one reload, not a Send.
+  if (!await answerHasMcpCall(grant.sessionId, conversationId, grant.turnId) &&
+      (!idleRecoveryDue(grant.evidenceAt, Date.now()) ||
+        !(await readLatestUserMessage(grant.sessionId, grant.turnId))?.messageId)) return false;
   const boundary = await readRecoveryBoundary(grant.sessionId, grant.turnId);
   const session = await getSession(grant.sessionId);
   return session?.conversationId === conversationId && session.endedAt === null && session.browserRecoveryDismissedAt === undefined &&
@@ -9961,10 +9967,13 @@ async function browserTabPolicy(openConversations: Set<string>) {
     return row?.activeTurnId === null && Math.max(row.lastTurnEndAt ?? 0, row.lastAssistantFinalAt ?? 0) > 0;
   });
   const quietFor = (id: string, ms: number) => Date.now() - lastActivity.get(id)! >= ms;
-  const idlePages = available.filter(id => quietFor(id, 300_000));
+  // An idle renderer is disposable, not its durable chat, worker or recovery obligations.
+  // Terminal helpers, superseded chats and duplicates keep independent retirement rules.
+  const idleCloseAfterMs = (getConfig().ui.idleTabCloseMinutes ?? 5) * 60_000;
+  const idlePages = idleCloseAfterMs > 0 ? available.filter(id => quietFor(id, idleCloseAfterMs)) : [];
   return {
     idleReuseAfterMs: 120_000,
-    idleCloseAfterMs: 300_000,
+    idleCloseAfterMs,
     cancelledDecisionClaims: cancelledDecisionClaims.map(row => ({ id: row.id, owner: row.owner, conversationId: row.conversationId })),
     // Only terminal/blocked helpers and superseded sources grant close authority.
     retiredConversations: [...new Set([...idle, ...supersededSourceConversations()])]
@@ -10075,15 +10084,17 @@ async function inspectSilentChats(now: number): Promise<{ queued: boolean; spent
       deferred = true;
       continue;
     }
-    // Observation owns liveness, never permission to interrupt the native page.
-    // Only an exactly recorded local call in this source turn earns silence repair.
-    if (!grant.turnId || !await answerHasMcpCall(grant.sessionId, conversationId, grant.turnId)) {
-      if (activeUntil.get(conversationId) === grant) {
-        noteSilence(conversationId, grant, grant.turnId
-          ? `not available: turn ${grant.turnId} has no tool call recorded for this chat (calls from ChatGPT's code mode are often not attributed)`
-          : 'not available: the silent work has no turn');
-        markSpent(conversationId, grant);
-      }
+    // Tool-backed turns keep their early silence recovery. An exact source turn
+    // without attributed MCP calls instead gets the twelve-minute fallback.
+    if (!grant.turnId) {
+      noteSilence(conversationId, grant, 'not available: the silent work has no turn');
+      markSpent(conversationId, grant);
+      continue;
+    }
+    const hasAttributedCall = await answerHasMcpCall(grant.sessionId, conversationId, grant.turnId);
+    if (!hasAttributedCall && !idleRecoveryDue(grant.evidenceAt, now)) {
+      grant.until = grant.evidenceAt + IDLE_RECOVERY_AFTER_MS;
+      deferred = true;
       continue;
     }
     const pro = await extendedSilenceWindowFor(conversationId, grant.sessionId);
@@ -11597,6 +11608,25 @@ async function confirmRepair(token: string, action: 'reloaded' | 'reopened' | 'r
         // Persist the next existing instruction as soon as this exact refresh is
         // acknowledged. Native readiness and the normal Send receipt still gate delivery.
         const inputFiled = await fileSilenceInputTicket(conversationId, Date.now());
+        // Tool-free GPT turns cannot file the MCP-backed ticket. Once the original
+        // question, twelve silent minutes and a successful browser reload are
+        // proven, queue exactly one protected Continue via the durable outbox.
+        const idleGrant = repair.silenceGrant;
+        if (!inputFiled && idleGrant?.turnId && activeUntil.get(conversationId) === idleGrant &&
+            (action === 'reloaded' || action === 'reopened' || action === 'resumed') &&
+            idleRecoveryDue(idleGrant.evidenceAt, Date.now()) &&
+            !await answerHasMcpCall(idleGrant.sessionId, conversationId, idleGrant.turnId) &&
+            recoveryInputAllowed(idleGrant.sessionId, conversationId) &&
+            await silenceSourceCurrent(conversationId, idleGrant)) {
+          const idleFiled = await fileRecoveryInput(idleGrant.sessionId, conversationId, idleGrant.turnId, false,
+            () => repairsInFlight.get(conversationId) === repair && repair.state === 'done' &&
+              activeUntil.get(conversationId) === idleGrant && !silenceHeldByCalls(conversationId, idleGrant) &&
+              !stopRequestedFor(conversationId) && !isChatBlocked(conversationId) &&
+              !continuationForSession(idleGrant.sessionId),
+            Date.now() + IDLE_RECOVERY_POST_RELOAD_MS, `idle-silence:${repair.token}`,
+            false, true, true);
+          logInfo(`bridge: ${conversationId} twelve-minute idle recovery ${idleFiled ? 'queued one fenced Continue after confirmed reload' : 'withheld by outbox safety checks'}`);
+        }
         if (!inputFiled && (loopAfterTurnFor(conversationId) || (failedGrant && failedGrant.model !== 'pro'))) await fileSilenceTickets([conversationId], Date.now());
         // The confirmed refresh owns one minute for ordinary models and five for
         // Pro, including failed views. These reuse the same grant and tickets.
