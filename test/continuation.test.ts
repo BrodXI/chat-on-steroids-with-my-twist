@@ -623,6 +623,9 @@ describe('claiming', () => {
 describe('committing', () => {
 
   it('includes a user schedule in the handoff and retires it only on committed transfer', async () => {
+    const { initDurableStore, resetDurableForTests } = await import('../src/main/durable.js');
+    initDurableStore(dir);
+    try {
     const { listSchedules, saveSchedule } = await import('../src/main/scheduled-runs.js');
     const summary = await createSession({ title: 'scheduled work', conversationId: CHAT_A });
     const old = await saveSchedule({ sessionId: summary.id, text: 'Check the nightly build', repeat: { kind: 'daily', at: '21:00' }, until: null });
@@ -638,6 +641,7 @@ describe('committing', () => {
     expect(await commitContinuation(entry.token, CHAT_B)).toBe(true);
     expect((await listSchedules()).find(run => run.sessionId === summary.id)).toBeUndefined();
     expect(await commitContinuation(entry.token, CHAT_B)).toBe(true);
+    } finally { resetDurableForTests(); }
   });
 
   it('moves the session, its history, workspace and saved Goal objective together', async () => {
