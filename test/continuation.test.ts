@@ -626,8 +626,11 @@ describe('committing', () => {
     const { listSchedules, saveSchedule } = await import('../src/main/scheduled-runs.js');
     const summary = await createSession({ title: 'scheduled work', conversationId: CHAT_A });
     const old = await saveSchedule({ sessionId: summary.id, text: 'Check the nightly build', repeat: { kind: 'daily', at: '21:00' }, until: null });
+    expect((await listSchedules()).find(run => run.sessionId === summary.id)).toMatchObject({ text: 'Check the nightly build' });
     const entry = await openContinuationNow(summary.id, CHAT_A);
+    expect((await listSchedules()).find(run => run.sessionId === summary.id)?.id).toBe(old.id);
     const brief = await attachSummary(entry.token, SAMPLE_BRIEF);
+    expect(brief?.notes).toContain(`compact-schedule:${old.id}:${old.createdAt}`);
     expect(brief?.text).toContain('Check the nightly build');
     expect(brief?.text).toContain('not permission to resend or recreate');
     expect((await listSchedules()).find(run => run.sessionId === summary.id)?.id).toBe(old.id);
