@@ -3928,5 +3928,15 @@
   "Checking installed plugins…": "正在检查已安装的插件…",
   "Check the Core, Desktop and Plugins tools in ChatGPT": "检查 ChatGPT 中的 Core、Desktop 和 Plugins 工具",
   "Close plugin refresh progress": "关闭插件刷新进度",
-  "Installed plugin refresh steps": "已安装插件的刷新步骤"
+  "Installed plugin refresh steps": "已安装插件的刷新步骤",
+  "Automatic tab memory saver": "自动释放标签页内存",
+  "Close idle CoS-managed ChatGPT tabs after this much inactivity. Off disables idle closing; finished workers, superseded handoffs and duplicate tabs may still close safely. Your personal browser tabs are never targeted.": "在指定空闲时间后关闭 CoS 管理的 ChatGPT 标签页。关闭此选项后，已完成的工作、已替换的交接和重复标签页仍可能安全关闭。个人标签页不受影响。",
+  "Off for idle tabs": "不自动关闭空闲标签页",
+  "After 2 minutes": "2 分钟后",
+  "After 5 minutes (default)": "5 分钟后（默认）",
+  "After 10 minutes": "10 分钟后",
+  "After 15 minutes": "15 分钟后",
+  "After 30 minutes": "30 分钟后",
+  "After 60 minutes": "60 分钟后",
+  "Cleanup waits for verified finished or idle work and exact browser proof that the page is safe to close. Foreground tabs, active turns, recovery, and unsent drafts are protected.": "只有确认工作结束或空闲且浏览器验证可以安全关闭时才会清理。当前标签页、正在进行的回复、恢复过程和未发送的草稿均受保护。"
 }
