@@ -4012,5 +4012,15 @@
   "Checking installed plugins…": "Yüklü eklentiler denetleniyor…",
   "Check the Core, Desktop and Plugins tools in ChatGPT": "ChatGPT'deki Core, Desktop ve Plugins araçlarını kontrol et",
   "Close plugin refresh progress": "Eklenti yenileme ilerlemesini kapat",
-  "Installed plugin refresh steps": "Yüklü eklenti yenileme adımları"
+  "Installed plugin refresh steps": "Yüklü eklenti yenileme adımları",
+  "Automatic tab memory saver": "Otomatik sekme belleği tasarrufu",
+  "Close idle CoS-managed ChatGPT tabs after this much inactivity. Off disables idle closing; finished workers, superseded handoffs and duplicate tabs may still close safely. Your personal browser tabs are never targeted.": "CoS tarafından yönetilen boşta duran ChatGPT sekmelerini seçilen süreden sonra kapatır. Kapalı olsa bile tamamlanan işler, eski devirler ve yinelenen sekmeler güvenle kapatılabilir. Kişisel sekmeler etkilenmez.",
+  "Off for idle tabs": "Boştaki sekmeler için kapalı",
+  "After 2 minutes": "2 dakika sonra",
+  "After 5 minutes (default)": "5 dakika sonra (varsayılan)",
+  "After 10 minutes": "10 dakika sonra",
+  "After 15 minutes": "15 dakika sonra",
+  "After 30 minutes": "30 dakika sonra",
+  "After 60 minutes": "60 dakika sonra",
+  "Cleanup waits for verified finished or idle work and exact browser proof that the page is safe to close. Foreground tabs, active turns, recovery, and unsent drafts are protected.": "Yalnızca işin bittiği veya boşta olduğu ve tarayıcının güvenli kapatmayı doğruladığı durumlarda temizlenir. Ön plandaki sekmeler, etkin yanıtlar, kurtarma ve gönderilmemiş taslaklar korunur."
 }
