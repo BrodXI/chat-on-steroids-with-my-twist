@@ -1356,3 +1356,16 @@ it('says once that a run missed before the end date is not sent, and stays quiet
   expect(deps.log).toHaveBeenCalledTimes(1);
 });
 
+
+it('retires only the captured compact schedule, not a newer replacement', async () => {
+  const { runs } = await setup();
+  const old = await runs.saveSchedule({ sessionId: SESSION, text: 'Old scheduled request', repeat: { kind: 'hours', every: 2 }, until: null }, 1000);
+  expect(await runs.retireCompactedSchedule(SESSION, old.id, old.createdAt + 1)).toBe('changed');
+  expect(await runs.listSchedules()).toHaveLength(1);
+  const replacement = await runs.saveSchedule({ sessionId: SESSION, text: 'New scheduled request', repeat: { kind: 'hours', every: 1 }, until: null }, 2000);
+  expect(await runs.retireCompactedSchedule(SESSION, old.id, old.createdAt)).toBe('changed');
+  expect((await runs.listSchedules())[0]?.text).toBe('New scheduled request');
+  expect(await runs.retireCompactedSchedule(SESSION, replacement.id, replacement.createdAt)).toBe('removed');
+  expect(await runs.retireCompactedSchedule(SESSION, replacement.id, replacement.createdAt)).toBe('absent');
+  expect(await runs.listSchedules()).toHaveLength(0);
+});

@@ -66,6 +66,8 @@ import {
 import { clearChatWorkspace, moveChatWorkspace, workspaceForChat } from '../workspace.js';
 import { clearGoalObjective, clearGoalSwitch, goalObjectiveFor, goalSwitchFor, moveGoalObjective, moveGoalSwitch, retireGoalDraftsFor } from '../goal.js';
 import { writeDurableNow, writeDurableSoon } from '../durable.js';
+import { retireCompactedSchedule } from '../scheduled-runs.js';
+import { retireUnsentCompactedScheduledInputs } from './input.js';
 import { handoffContinuationId, handoffMatchesContinuation, prepareHandoff, resumeBootstrapMatches } from './handoff.js';
 import { ensureHandoffRecorded, recordHandoff, recordNote, rebindConversation } from './recorder.js';
 import { endResumeClaim, noteResumeClaim, noteResumeDispatch, resetResumeGate } from './resume-gate.js';
@@ -1409,7 +1411,30 @@ async function rollbackCommitting(
   }
 }
 
+/** A compact that fails or is merely captured must leave its scheduled messages untouched.
+ * The exact handoff note is durable across app restart and limits cleanup to that snapshot. */
+async function retireCommittedSchedule(entry: Continuation): Promise<void> {
+  if (!entry.handoffId) return;
+  try {
+    const handoff = entry.handoff ?? await readHandoff(entry.sessionId, entry.handoffId);
+    const marker = handoff?.notes.find(note => /^compact-schedule:[0-9a-f-]{36}:\\d+$/.test(note));
+    if (!marker) return;
+    const [, id, timestamp] = marker.split(':');
+    const status = await retireCompactedSchedule(entry.sessionId, id!, Number(timestamp));
+    if (status === 'changed') {
+      logInfo(`continuation ${entry.token.slice(0, 8)} kept a schedule changed after the handoff snapshot`);
+      return;
+    }
+    const cancelled = await retireUnsentCompactedScheduledInputs(entry.sessionId, id!);
+    logInfo(`continuation ${entry.token.slice(0, 8)} retired its captured user schedule (${status}); ${cancelled} unsent scheduled input(s) cancelled`);
+  } catch (err) {
+    // A schedule-store outage must not undo a committed conversation move.
+    logWarn(`continuation ${entry.token.slice(0, 8)} could not retire its committed schedule: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 async function finishCommittedRecord(entry: Continuation, toConversationId: string): Promise<void> {
+  await retireCommittedSchedule(entry);
   try {
     await transitionNow(entry, (current) => ({
       ...current,
@@ -1574,6 +1599,7 @@ async function commitContinuationUnlocked(
         };
       }
     }
+    await retireCommittedSchedule(entry);
     return { status: 'already-committed', conversationId: committedTo };
   }
   if (entry.state === 'committing') {
@@ -1884,6 +1910,7 @@ export async function restoreContinuations(snapshot: ContinuationSnapshot | null
           }
         }
         publishCommittedProjection(entry, entry.to, 'recovery');
+        await retireCommittedSchedule(entry);
         entry.state = 'committed';
         entry.error = null;
         logInfo(`continuation ${entry.token.slice(0, 8)} recovered after durable commit`);

@@ -367,6 +367,22 @@ export function setSchedulePaused(sessionId: string, paused: boolean, now = Date
   });
 }
 
+/**
+ * Retire only the exact schedule captured in a Compact & Resume brief.
+ * Replacements made while the handoff was in flight belong to the user's new intent.
+ * The caller cancels only unsent outbox messages after this durable removal.
+ */
+export function retireCompactedSchedule(sessionId: string, scheduleId: string, createdAt: number): Promise<'removed' | 'absent' | 'changed'> {
+  return serial(async () => {
+    const schedules = await load();
+    const run = schedules.find(row => row.sessionId === sessionId);
+    if (!run) return 'absent';
+    if (run.id !== scheduleId || run.createdAt !== createdAt) return 'changed';
+    await save(schedules.filter(row => row.sessionId !== sessionId));
+    return 'removed';
+  });
+}
+
 export function deleteSchedule(sessionId: string): Promise<boolean> {
   return serial(async () => {
     const schedules = await load();

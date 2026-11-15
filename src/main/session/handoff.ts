@@ -10,6 +10,7 @@
 
 import { createHash, randomUUID } from 'node:crypto';
 import type { Handoff } from '../../shared/session.js';
+import { listSchedules } from '../scheduled-runs.js';
 import { continuationMarkerOf, unescapeMarkdown } from '../../shared/session.js';
 import { logInfo } from '../logger.js';
 import { getSession, readSessionPlan, readSessionUserRequests, saveHandoff } from './store.js';
@@ -199,8 +200,20 @@ export async function prepareHandoff(input: PrepareHandoffInput): Promise<Handof
   if (!summary) throw new Error('That session no longer exists');
   // Freeze the actual saved plan with the brief. A pointer to the removed session
   // tool cannot supply it to the replacement model. Budget this same snapshot once.
+  // User-authored CoS scheduled messages are not assistant replies. The next GPT chat
+  // must know exactly what was scheduled, even though the schedule is retired on commit.
+  const scheduled = (await listSchedules()).find(run => run.sessionId === input.sessionId);
+  const scheduleNotice = scheduled
+    ? '\n\nCOS scheduled user message at handoff (not an assistant message):\n' +
+      'Status: ' + (scheduled.paused ? 'paused' : 'active') + '\n' +
+      'Repeat: ' + JSON.stringify(scheduled.repeat) + '\n' +
+      'Until: ' + (scheduled.until === null ? 'no end date' : new Date(scheduled.until).toISOString()) + '\n' +
+      'Message: ' + (scheduled.text.length > 8000 ? scheduled.text.slice(0, 8000) + ' [truncated]' : scheduled.text) + '\n' +
+      'This schedule will be deleted by CoS only after Compact & Resume commits to the next chat. ' +
+      'It is context, not permission to resend or recreate it. Ask the user before scheduling it again.'
+    : '';
   const planNotice = handoffPlanNotice(await readSessionPlan(input.sessionId)) +
-    handoffUserRequestsNotice(await readSessionUserRequests(input.sessionId));
+    handoffUserRequestsNotice(await readSessionUserRequests(input.sessionId)) + scheduleNotice;
   const overhead = resumeBootstrapText('', input.continuationToken).length + planNotice.length;
   text = boundBrief(text, MAX_CHATGPT_MESSAGE_CHARS - overhead);
   // Checked again here, and not only at the bridge route that can word the refusal well,
@@ -223,7 +236,7 @@ export async function prepareHandoff(input: PrepareHandoffInput): Promise<Handof
     // The working folder is deliberately not here. It belongs to the durable local session
     // and moves with the session's rebind (see `moveChatWorkspace`), so writing it into the
     // brief as well would be a second, weaker copy of state the commit already carries.
-    notes: [...(input.notes ?? [])],
+    notes: [...(input.notes ?? []), ...(scheduled ? [`compact-schedule:${scheduled.id}:${scheduled.createdAt}`] : [])],
     provenance: {
       sourceConversationId,
       sourceGeneration: sourceIndex >= 0 ? sourceIndex + 1 : null,

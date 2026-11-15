@@ -1482,6 +1482,23 @@ async function publishHistory(): Promise<void> {
     catch { /* the durable delivery receipt remains; canonical retry is idempotent */ }
   }
 }
+/** Cancel only scheduled deliveries that have not yet been authorized to Send.
+ * Keep all authorized/ambiguous deliveries as durable receipts, never claim to unsend them. */
+export function retireUnsentCompactedScheduledInputs(sessionId: string, scheduleId: string): Promise<number> {
+  return serial(async () => {
+    const rows = await load();
+    const candidates = rows.filter(row => row.sessionId === sessionId && row.scheduled?.scheduleId === scheduleId &&
+      (row.state === 'queued' || row.state === 'browser') && row.sendAuthorizedAt === undefined);
+    if (!candidates.length) return 0;
+    const ids = new Set(candidates.map(row => row.id));
+    await commit(rows.map(row => ids.has(row.id) ? {
+      ...row, state: 'cancelled' as const, cancelledByUser: true, owner: null,
+      error: 'Unsent scheduled message cancelled after Compact & Resume.'
+    } : row));
+    return ids.size;
+  });
+}
+
 export function cancelInput(id: string): Promise<boolean> {
   return serial(async () => {
     const current = await load();
