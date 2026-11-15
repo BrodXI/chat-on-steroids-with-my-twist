@@ -94,6 +94,16 @@ export function recoveryMessage(options: { playful?: boolean; custom?: string } 
   return `${custom || pick(CONTINUE_TEXTS)} ${pick(RECOVERY_NOTES)}${aside}`;
 }
 
+/** Safe fallback for a genuine open GPT turn with no recorded tool calls.
+ * Unlike the early MCP-backed reload, this path needs twelve minutes of silence and
+ * a confirmed browser refresh before queuing one fenced recovery message. */
+export const IDLE_RECOVERY_AFTER_MS = 12 * 60_000;
+export const IDLE_RECOVERY_POST_RELOAD_MS = 60_000;
+export function idleRecoveryDue(evidenceAt: number, now: number): boolean {
+  return Number.isFinite(evidenceAt) && Number.isFinite(now) && now >= evidenceAt &&
+    now - evidenceAt >= IDLE_RECOVERY_AFTER_MS;
+}
+
 /** The existing silence clock gets one half-window only when the native page is busy. */
 export const recoveryBusyMs = (pro: boolean): number => (pro ? 5 : 1) * 60_000;
 

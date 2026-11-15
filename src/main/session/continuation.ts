@@ -1417,7 +1417,7 @@ async function retireCommittedSchedule(entry: Continuation): Promise<void> {
   if (!entry.handoffId) return;
   try {
     const handoff = entry.handoff ?? await readHandoff(entry.sessionId, entry.handoffId);
-    const marker = handoff?.notes.find(note => /^compact-schedule:[0-9a-f-]{36}:\\d+$/.test(note));
+    const marker = handoff?.notes.find(note => /^compact-schedule:[0-9a-f-]{36}:\d+$/.test(note));
     if (!marker) return;
     const [, id, timestamp] = marker.split(':');
     const status = await retireCompactedSchedule(entry.sessionId, id!, Number(timestamp));
