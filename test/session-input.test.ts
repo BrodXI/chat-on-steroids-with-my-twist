@@ -3007,3 +3007,23 @@ describe('withdrawing the app\'s own Continues after a Stop', () => {
     expect(await withdrawOwnContinuesAfterStop(sessionId, 'ended-turn')).toBe(0);
   });
 });
+
+describe('scheduled messages after committed Compact & Resume', () => {
+  it('cancels only unsent scheduled rows and preserves any authorized Send', async () => {
+    const { retireUnsentCompactedScheduledInputs } = await import('../src/main/session/input.js');
+    const scheduleId = randomUUID();
+    const differentId = randomUUID();
+    const first = await seedLegacyInput(input({ scheduled: { scheduleId, dueAt: 1000, late: false } }));
+    const authorized = await seedLegacyInput(input({ scheduled: { scheduleId, dueAt: 2000, late: false } }));
+    const other = await seedLegacyInput(input({ scheduled: { scheduleId: differentId, dueAt: 1000, late: false } }));
+    await writeDurableNow('session-input', (await listInputs()).map(row => row.id === authorized.id
+      ? { ...row, state: 'browser', owner: 'browser-test', sendAuthorizedAt: now } : row));
+    resetInputForTests();
+    expect(await retireUnsentCompactedScheduledInputs(sessionId, scheduleId)).toBe(1);
+    const rows = await listInputs();
+    expect(rows.find(row => row.id === first.id)).toMatchObject({ state: 'cancelled', cancelledByUser: true });
+    expect(rows.find(row => row.id === authorized.id)).toMatchObject({ state: 'browser', sendAuthorizedAt: now });
+    expect(rows.find(row => row.id === other.id)?.state).toBe('queued');
+    expect(await retireUnsentCompactedScheduledInputs(sessionId, scheduleId)).toBe(0);
+  });
+});
