@@ -3928,5 +3928,15 @@
   "Checking installed plugins…": "インストール済みプラグインを確認中…",
   "Check the Core, Desktop and Plugins tools in ChatGPT": "ChatGPT の Core、Desktop、Plugins ツールを確認する",
   "Close plugin refresh progress": "プラグイン更新の進行状況を閉じる",
-  "Installed plugin refresh steps": "インストール済みプラグインの更新手順"
+  "Installed plugin refresh steps": "インストール済みプラグインの更新手順",
+  "Automatic tab memory saver": "タブのメモリ自動節約",
+  "Close idle CoS-managed ChatGPT tabs after this much inactivity. Off disables idle closing; finished workers, superseded handoffs and duplicate tabs may still close safely. Your personal browser tabs are never targeted.": "CoS が管理する ChatGPT タブを指定時間のアイドル後に閉じます。オフでも終了したワーカー、置き換えられた引き継ぎ、重複タブは安全確認後に閉じる場合があります。個人のタブは対象外です。",
+  "Off for idle tabs": "アイドルタブの自動終了をオフ",
+  "After 2 minutes": "2 分後",
+  "After 5 minutes (default)": "5 分後（既定）",
+  "After 10 minutes": "10 分後",
+  "After 15 minutes": "15 分後",
+  "After 30 minutes": "30 分後",
+  "After 60 minutes": "60 分後",
+  "Cleanup waits for verified finished or idle work and exact browser proof that the page is safe to close. Foreground tabs, active turns, recovery, and unsent drafts are protected.": "作業完了またはアイドル状態とブラウザーの安全確認を得た場合だけ閉じます。表示中のタブ、進行中の応答、復旧、未送信の下書きは保護されます。"
 }
